@@ -1,6 +1,10 @@
 # Private harness — never ship with the public repo.
 # Worktrees receive these via symlinks (see .claude/hooks/worktree-create.sh).
+# Bare names (no trailing slash) are listed alongside dir patterns so the
+# rules also match the SYMLINKS worktrees contain (V-001).
+.claude
 .claude/
+rules
 rules/
 CLAUDE.md
 SPEC.md
@@ -9,6 +13,7 @@ SPEC.md
 .worktrees/
 
 # Artifacts
+artifacts
 artifacts/*
 
 # Dependencies

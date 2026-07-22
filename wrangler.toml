@@ -1,0 +1,18 @@
+name = "gitcert"
+main = "src/index.ts"
+compatibility_date = "2026-07-22"
+routes = [{ pattern = "gitcert.harborstack.app/*", zone_name = "harborstack.app" }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gitcert"
+# Placeholder — real database_id is set at first deploy (see deploy notes).
+# Run `wrangler d1 create gitcert` and paste the returned id here.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+GITHUB_APP_ID = ""

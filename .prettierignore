@@ -1,0 +1,8 @@
+node_modules
+.wrangler
+dist
+package-lock.json
+migrations
+*.sql
+.dev.vars
+.dev.vars.*

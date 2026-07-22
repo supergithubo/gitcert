@@ -1,0 +1,14 @@
+# Copy to .dev.vars (gitignored) and fill in real values for local dev.
+# M1 reads exactly these secrets. Later milestones append their own as the
+# code that reads them lands.
+
+# GitHub App private key, PKCS#8 PEM, used to mint App JWTs (RS256).
+GITHUB_APP_PRIVATE_KEY=""
+
+# Shared secret configured on the GitHub App's webhook — verifies
+# X-Hub-Signature-256 (HMAC-SHA256) before any body parsing.
+GITHUB_WEBHOOK_SECRET=""
+
+# Ed25519 signing seed, base64 raw 32 bytes — signs the canonical
+# attestation payload_json.
+SIGNING_KEY=""
