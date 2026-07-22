@@ -1,0 +1,24 @@
+# Private harness — never ship with the public repo.
+# Worktrees receive these via symlinks (see .claude/hooks/worktree-create.sh).
+.claude/
+rules/
+CLAUDE.md
+SPEC.md
+
+# Worktrees
+.worktrees/
+
+# Artifacts
+artifacts/*
+
+# Dependencies
+node_modules/
+
+# Wrangler local state + build output
+.wrangler/
+dist/
+
+# Secrets — never commit. Keep only the .example template.
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
