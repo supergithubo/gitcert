@@ -21,6 +21,10 @@ declare global {
       TEST_MIGRATIONS: D1Migration[];
       /** src/styles/app.css source text (vitest.config.ts) — theme-plumbing tests. */
       TEST_APP_CSS: string;
+      /** public/favicon.svg asset text (vitest.config.ts) — seal-derivation test. */
+      TEST_FAVICON_SVG: string;
+      /** public/styles.css compiled text (vitest.config.ts) — stale-build guard. */
+      TEST_COMPILED_CSS: string;
     }
   }
 }

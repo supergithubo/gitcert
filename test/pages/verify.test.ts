@@ -176,3 +176,11 @@ describe('VerifyNotFoundPage', () => {
     expect(html).not.toContain('"><svg onload=x>');
   });
 });
+
+describe('VerifyPage footer (shared shell)', () => {
+  it('renders the site footer', () => {
+    const html = render(VerifyPage(fixtureProps()));
+    expect(html).toContain('<footer');
+    expect(html).toContain('· Built by ');
+  });
+});

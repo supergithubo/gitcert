@@ -72,7 +72,11 @@ describe('LandingPage (unauth)', () => {
     const html = render(null);
     expect(html).toContain('johndoe/client-platform');
     expect(html).toContain('&lt;yoursite&gt;.io');
-    expect(html).not.toContain('wnston');
+    // Anonymization covers the MOCK DATA only — the footer's "Built by
+    // wnston.dev" credit is intentional real identity (user decision,
+    // UI polish batch). Nothing outside the footer may leak it.
+    const beforeFooter = html.slice(0, html.indexOf('<footer'));
+    expect(beforeFooter).not.toContain('wnston');
   });
 
   it('has no attestation link in the inline-site links row (decision #4)', () => {
@@ -125,12 +129,16 @@ describe('LandingPage accent discipline (mock authority)', () => {
   it('renders both CTAs as ink buttons with paper text, never accent', () => {
     for (const auth of [null, { attestedCount: 2 }] as const) {
       const html = render(auth);
-      const cta = /<a data-nav="true" href="\/(?:auth\/login|dashboard)" class="([^"]+)"/.exec(
-        html,
-      );
-      expect(cta?.[1]).toContain('bg-ink');
-      expect(cta?.[1]).toContain('text-paper');
-      expect(cta?.[1]).not.toContain('accent');
+      // First match is now the nav wordmark link (ink text, not a button);
+      // the hero CTA is the last internal data-nav anchor on the page.
+      const anchors = [
+        ...html.matchAll(/<a data-nav="true" href="\/(?:auth\/login|dashboard)" class="([^"]+)"/g),
+      ].map((m) => m[1]);
+      expect(anchors.length).toBeGreaterThanOrEqual(2);
+      for (const cls of anchors) expect(cls).not.toContain('accent');
+      const cta = anchors[anchors.length - 1];
+      expect(cta).toContain('bg-ink');
+      expect(cta).toContain('text-paper');
     }
   });
 
@@ -231,5 +239,16 @@ describe('LandingPage brand', () => {
     expect(html).toContain(
       '<title>GitCert — verified badges for private GitHub repositories</title>',
     );
+  });
+});
+
+describe('LandingPage footer (shared shell)', () => {
+  it('renders the build-constant footer on both cache variants', () => {
+    for (const auth of [null, { attestedCount: 2 }] as const) {
+      const html = render(auth);
+      expect(html).toContain('<footer');
+      expect(html).toContain('· Built by ');
+      expect(html).toContain('href="https://wnston.dev"');
+    }
   });
 });

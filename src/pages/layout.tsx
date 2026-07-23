@@ -8,6 +8,10 @@
 
 import { raw } from 'hono/html';
 import type { Child } from 'hono/jsx';
+// Named JSON import — esbuild tree-shakes package.json down to this one
+// field, so only the version string reaches the bundle (versioning rule:
+// the version lives ONLY in root package.json, never hardcoded).
+import { version } from '../../package.json';
 import { sealSvg } from '../badges/seal';
 
 export const GITHUB_REPO_URL = 'https://github.com/supergithubo/gitcert';
@@ -62,11 +66,13 @@ export function Layout(props: { title: string; children?: Child }) {
           <meta name="viewport" content="width=device-width, initial-scale=1" />
           <title>{props.title}</title>
           <script>{raw(THEME_INIT_SCRIPT)}</script>
+          <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
           <link rel="stylesheet" href="/styles.css" />
         </head>
-        <body class="min-h-screen bg-paper font-display text-ink antialiased">
+        <body class="flex min-h-screen flex-col bg-paper font-display text-ink antialiased">
           <Nav />
-          {props.children}
+          <div class="flex-1">{props.children}</div>
+          <Footer />
           <script>{raw(THEME_TOGGLE_SCRIPT)}</script>
         </body>
       </html>
@@ -78,10 +84,12 @@ function Nav() {
   return (
     <div class="sticky top-0 z-20 border-b border-hair bg-nav backdrop-blur-[6px]">
       <div class="mx-auto flex h-14 max-w-[1120px] items-center justify-between px-4 sm:h-[58px] sm:px-7">
-        <div class="flex items-center gap-[9px]">
+        {/* data-nav suppresses the base a:hover underline; text-ink overrides
+            the base accent link color — the wordmark keeps its exact look. */}
+        <a data-nav href="/dashboard" class="flex items-center gap-[9px] text-ink">
           {raw(sealSvg({ size: 19, kind: 'check', color: 'var(--accent)' }))}
           <span class="font-mono text-[16px] font-semibold tracking-[-0.4px]">GitCert</span>
-        </div>
+        </a>
         <div class="flex items-center gap-[22px]">
           <a
             data-nav
@@ -99,6 +107,33 @@ function Nav() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Site footer on every page (the cached signed-out landing included — safe
+ * because everything here is build-constant, nothing per-request). Muted
+ * small mono over a panel-tinted band with a hairline top rule; splits
+ * left/right from `sm:`, stacks at base width. Links override the base
+ * accent link color with text-muted (accent stays reserved for verified
+ * states); external links mirror the nav's target/rel pattern.
+ */
+function Footer() {
+  return (
+    <footer class="border-t border-hair bg-panel">
+      <div class="mx-auto flex max-w-[1120px] flex-col gap-2 px-4 py-6 font-mono text-[12px] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-7">
+        <div>GitCert v{version}</div>
+        <div>
+          <a href={GITHUB_REPO_URL} target="_blank" rel="noopener" class="text-muted">
+            View on GitHub
+          </a>
+          {' · Built by '}
+          <a href="https://wnston.dev" target="_blank" rel="noopener" class="text-muted">
+            wnston.dev
+          </a>
+        </div>
+      </div>
+    </footer>
   );
 }
 

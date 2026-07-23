@@ -54,6 +54,12 @@ const BUILDER_METRICS: readonly Metric[] = [
   'size',
 ];
 
+/**
+ * GitHub's manage/reselect-repos flow for the GitCert app — the same URL
+ * serves first install (empty state) and later repo-selection edits.
+ */
+const GITCERT_INSTALL_URL = 'https://github.com/apps/gitcert/installations/new';
+
 const LABEL_CLASS = 'font-mono text-[12.5px] text-soft';
 const PANEL_HEADING_CLASS = 'font-mono text-[11px] tracking-[1.5px] text-muted uppercase';
 const SELECT_CLASS =
@@ -295,9 +301,7 @@ function EmptyState() {
     <div class="border border-hair-strong bg-card p-6">
       <div class={`${PANEL_HEADING_CLASS} mb-4`}>My repos</div>
       <div class="font-mono text-[13px] text-muted">
-        No repos yet —{' '}
-        <a href="https://github.com/apps/gitcert/installations/new">install GitCert on a repo</a> to
-        get started.
+        No repos yet — <a href={GITCERT_INSTALL_URL}>install GitCert on a repo</a> to get started.
       </div>
     </div>
   );
@@ -337,20 +341,34 @@ function RepoPanel(props: {
       <div class={`${PANEL_HEADING_CLASS} mb-4`}>My repos</div>
       <div
         data-repo-scroll
-        class="-mx-1 max-h-[196px] overflow-x-hidden overflow-y-auto px-1 lg:max-h-[460px]"
+        class="-mx-3 max-h-[196px] overflow-x-hidden overflow-y-auto px-3 lg:max-h-[460px]"
       >
         {repos.map((r) => (
           <RepoRow repo={r} selected={r === selected} />
         ))}
       </div>
       <div class="my-[18px] h-px bg-hair2" />
-      <button
-        type="button"
-        id="gc-refresh"
-        class="cursor-pointer rounded-[2px] border border-hair-strong bg-transparent px-[14px] py-2 font-mono text-[12.5px] text-ink"
-      >
-        refresh now
-      </button>
+      <div class="flex flex-wrap gap-[9px]">
+        <button
+          type="button"
+          id="gc-refresh"
+          class="cursor-pointer rounded-[2px] border border-hair-strong bg-transparent px-[14px] py-2 font-mono text-[12.5px] text-ink"
+        >
+          refresh now
+        </button>
+        {/* Link styled as the secondary button (data-nav: no hover underline;
+            text-ink: overrides the base accent link color) — GitHub's own
+            manage-installation flow handles repo reselection, no JS here. */}
+        <a
+          data-nav
+          href={GITCERT_INSTALL_URL}
+          target="_blank"
+          rel="noopener"
+          class="cursor-pointer rounded-[2px] border border-hair-strong bg-transparent px-[14px] py-2 font-mono text-[12.5px] text-ink"
+        >
+          edit repos
+        </a>
+      </div>
       <div id="gc-refresh-note" class="mt-2 hidden font-mono text-[11px] text-muted" />
       <div class="mt-3 font-mono text-[11px] text-muted">
         last sync {lastSyncAt === null ? '—' : formatHhMmUtc(lastSyncAt)} UTC
@@ -365,7 +383,7 @@ function RepoRow(props: { repo: DashboardRepo; selected: boolean }) {
     <button
       type="button"
       data-repo-id={repo.id}
-      class={`-mx-3 flex w-[calc(100%+24px)] cursor-pointer items-center gap-[10px] rounded-[3px] border-none p-3 text-left ${
+      class={`-mx-3 flex w-[calc(100%+24px)] cursor-pointer items-center gap-[10px] rounded-[3px] border-none px-4 py-3 text-left ${
         selected ? 'bg-panel' : 'bg-transparent'
       }`}
     >

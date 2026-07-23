@@ -50,3 +50,13 @@ describe('SignedOutPage', () => {
     expect(html).not.toContain('@');
   });
 });
+
+describe('Auth pages footer (shared shell)', () => {
+  it('renders the site footer on both auth pages', () => {
+    for (const page of [AuthErrorPage(), SignedOutPage()]) {
+      const html = render(page);
+      expect(html).toContain('<footer');
+      expect(html).toContain('· Built by ');
+    }
+  });
+});

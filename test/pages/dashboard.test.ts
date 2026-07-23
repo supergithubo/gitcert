@@ -44,6 +44,9 @@ describe('DashboardPage — header and repo list', () => {
     expect(html).toContain('Dashboard · @wnston');
     expect(html).toContain('Attest a repo, get a badge');
     expect(html).toContain('My repos');
+    // Shared shell footer reaches the dashboard too.
+    expect(html).toContain('<footer');
+    expect(html).toContain('· Built by ');
   });
 
   it('renders every repo row with owner/name and private/public tags', () => {
@@ -77,6 +80,32 @@ describe('DashboardPage — header and repo list', () => {
     expect(firstRow).toContain('font-semibold');
     const secondRow = html.slice(html.indexOf('data-repo-id="102"'), html.indexOf('open-cli'));
     expect(secondRow).not.toContain('bg-panel');
+  });
+
+  it('insets row content 16px inside the fully visible row-highlight overhang', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    // Scroll-container gutter matches the 12px row overhang so overflow-x-hidden
+    // no longer clips the full-row highlight (UI polish batch, change 3a).
+    expect(html).toContain('-mx-3 max-h-[196px] overflow-x-hidden overflow-y-auto px-3');
+    // Rows keep the -mx-3 overhang but gain a 16px horizontal content inset.
+    expect(html).toContain('w-[calc(100%+24px)]');
+    expect(html).toContain('px-4 py-3');
+  });
+
+  it('renders the edit-repos link-button beside refresh with safe new-tab attrs', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    const start = html.indexOf('id="gc-refresh"');
+    const block = html.slice(start, html.indexOf('gc-refresh-note'));
+    expect(block).toContain('edit repos');
+    expect(block).toContain('href="https://github.com/apps/gitcert/installations/new"');
+    expect(block).toContain('target="_blank"');
+    expect(block).toContain('rel="noopener"');
+    // Same secondary-button treatment on both (refresh + edit repos), and
+    // no underline/accent leakage on the link.
+    expect(block).toContain('data-nav');
+    expect(
+      count(block, 'rounded-[2px] border border-hair-strong bg-transparent px-[14px] py-2'),
+    ).toBe(2);
   });
 
   it('renders last sync HH:MM UTC from lastSyncAt', () => {
