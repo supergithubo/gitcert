@@ -319,6 +319,64 @@ describe('POST /repos/:id/settings', () => {
     expect(row?.included).toBe(0);
   });
 
+  it('purges cached verify and api responses for the repo on toggle, both directions (happy path — regression: toggle-cache-purge)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 17,
+      accountLogin: 'wnston',
+      accountId: 1700,
+      accountType: 'User',
+    });
+    await upsertRepos(env.DB, 17, [{ id: 170, owner: 'wnston', name: 'repo-g', private: true }]);
+
+    const cache = caches.default;
+    const verifyUrl = `${ORIGIN}/verify/wnston/repo-g`;
+    const apiUrl = `${ORIGIN}/api/wnston/repo-g.json`;
+    async function seedCache(): Promise<void> {
+      await cache.put(
+        verifyUrl,
+        new Response('cached-verify', { headers: { 'Cache-Control': 'public, max-age=300' } }),
+      );
+      await cache.put(
+        apiUrl,
+        new Response('cached-api', { headers: { 'Cache-Control': 'public, max-age=300' } }),
+      );
+      await expect(cache.match(verifyUrl)).resolves.toBeDefined();
+      await expect(cache.match(apiUrl)).resolves.toBeDefined();
+    }
+
+    // off -> on
+    await seedCache();
+    const offToOn = await SELF.fetch(`${ORIGIN}/repos/170/settings`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Cookie: await sessionCookieHeader(1700, 'wnston'),
+      },
+      body: JSON.stringify({ included: true }),
+    });
+    expect(offToOn.status).toBe(200);
+    await vi.waitFor(async () => {
+      expect(await cache.match(verifyUrl)).toBeUndefined();
+      expect(await cache.match(apiUrl)).toBeUndefined();
+    });
+
+    // on -> off
+    await seedCache();
+    const onToOff = await SELF.fetch(`${ORIGIN}/repos/170/settings`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Cookie: await sessionCookieHeader(1700, 'wnston'),
+      },
+      body: JSON.stringify({ included: false }),
+    });
+    expect(onToOff.status).toBe(200);
+    await vi.waitFor(async () => {
+      expect(await cache.match(verifyUrl)).toBeUndefined();
+      expect(await cache.match(apiUrl)).toBeUndefined();
+    });
+  });
+
   it('rejects malformed JSON with 400 (error path)', async () => {
     await upsertInstallation(env.DB, {
       id: 12,
@@ -527,6 +585,56 @@ describe('POST /repos/:id/refresh', () => {
 
     await vi.waitFor(() => expect(graphqlCalls.length).toBeGreaterThan(0));
     expect(mintedForInstallation).toContain('/22/');
+  });
+
+  it('purges cached verify and api responses for the repo once the collect completes (happy path — regression: toggle-cache-purge)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 23,
+      accountLogin: 'wnston',
+      accountId: 2300,
+      accountType: 'User',
+    });
+    await upsertRepos(env.DB, 23, [{ id: 230, owner: 'wnston', name: 'repo-d', private: true }]);
+    await upsertStats(env.DB, fixtureStats(230, { collectedAt: '2020-01-01T00:00:00Z' }));
+
+    const cache = caches.default;
+    const verifyUrl = `${ORIGIN}/verify/wnston/repo-d`;
+    const apiUrl = `${ORIGIN}/api/wnston/repo-d.json`;
+    await cache.put(
+      verifyUrl,
+      new Response('cached-verify', { headers: { 'Cache-Control': 'public, max-age=300' } }),
+    );
+    await cache.put(
+      apiUrl,
+      new Response('cached-api', { headers: { 'Cache-Control': 'public, max-age=300' } }),
+    );
+    await expect(cache.match(verifyUrl)).resolves.toBeDefined();
+    await expect(cache.match(apiUrl)).resolves.toBeDefined();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (TOKEN_MINT_PATTERN.test(url)) {
+          return jsonResponse({ token: 'ghs_test', expires_at: '2026-07-22T13:00:00Z' }, 201);
+        }
+        if (url === GRAPHQL_URL) {
+          return jsonResponse({ data: { r0: null } });
+        }
+        throw new Error(`unexpected fetch to ${url}`);
+      }),
+    );
+
+    const response = await SELF.fetch(`${ORIGIN}/repos/230/refresh`, {
+      method: 'POST',
+      headers: { Cookie: await sessionCookieHeader(2300, 'wnston') },
+    });
+    expect(response.status).toBe(202);
+
+    await vi.waitFor(async () => {
+      expect(await cache.match(verifyUrl)).toBeUndefined();
+      expect(await cache.match(apiUrl)).toBeUndefined();
+    });
   });
 
   it('returns 404 for an unknown repo id (edge case)', async () => {

@@ -4,7 +4,7 @@ import {
   buildEtag,
   edgeCache,
   matchesEtag,
-  purgeBadgeUrls,
+  purgePublicUrls,
   withConditionalGet,
 } from '../../src/lib/cache';
 
@@ -158,19 +158,22 @@ describe('edgeCache', () => {
   });
 });
 
-describe('purgeBadgeUrls', () => {
-  it('deletes every metric/style/theme variant plus the bare-default URL (happy path)', async () => {
+describe('purgePublicUrls', () => {
+  it('deletes every metric/style/theme badge variant plus the bare-default URL, and the verify + api URLs (happy path)', async () => {
     const owner = `purge-owner-${crypto.randomUUID()}`;
     const name = 'repo-a';
     const cache = caches.default;
 
-    // Seed a representative sample of the canonical variant set, plus one
-    // bare-default URL, so we can assert they're all gone afterward.
+    // Seed a representative sample of the canonical badge variant set,
+    // plus one bare-default URL, plus the verify and api URLs, so we can
+    // assert they're all gone afterward.
     const seeded = [
       `https://gitcert.harborstack.app/b/${owner}/${name}/commits.svg`,
       `https://gitcert.harborstack.app/b/${owner}/${name}/commits.svg?style=flat&theme=light`,
       `https://gitcert.harborstack.app/b/${owner}/${name}/size.svg?style=pill&theme=dark`,
       `https://gitcert.harborstack.app/b/${owner}/${name}/language.svg?style=pill&theme=auto`,
+      `https://gitcert.harborstack.app/verify/${owner}/${name}`,
+      `https://gitcert.harborstack.app/api/${owner}/${name}.json`,
     ];
     for (const url of seeded) {
       await cache.put(
@@ -182,7 +185,7 @@ describe('purgeBadgeUrls', () => {
       await expect(cache.match(url)).resolves.toBeDefined();
     }
 
-    await purgeBadgeUrls({ owner, name });
+    await purgePublicUrls({ owner, name });
 
     for (const url of seeded) {
       await expect(cache.match(url)).resolves.toBeUndefined();
@@ -191,7 +194,7 @@ describe('purgeBadgeUrls', () => {
 
   it('is a no-op (never throws) when nothing was cached for the repo (edge case)', async () => {
     await expect(
-      purgeBadgeUrls({ owner: `never-cached-${crypto.randomUUID()}`, name: 'repo-b' }),
+      purgePublicUrls({ owner: `never-cached-${crypto.randomUUID()}`, name: 'repo-b' }),
     ).resolves.toBeUndefined();
   });
 });

@@ -154,20 +154,38 @@ function buildBadgeUrlVariants(repoRef: RepoRef): string[] {
 }
 
 /**
- * Best-effort purge of a repo's canonical badge URL variants from
- * `caches.default` (spec overview Decision 11): 8 metrics × {flat,pill} ×
- * {light,dark,auto} explicit-param URLs, plus one bare-default URL per
- * metric. Called (via `waitUntil`) after a refresh collect completes and
- * after a settings toggle. A per-URL delete failure is swallowed — a
- * purge miss just means that one variant converges on its own via TTL,
- * and a purge must never fail the calling owner-route mutation.
- * Label-override/cache-buster variants are intentionally not enumerated
- * here — they converge by TTL (spec overview §Badge cache purge).
+ * The non-badge public surfaces that also render a repo's state
+ * (`/verify/:owner/:repo`, `/api/:owner/:repo.json`) — each is a single
+ * cache key (no style/theme/label variants), unlike badges.
  */
-export async function purgeBadgeUrls(repoRef: RepoRef): Promise<void> {
+function buildVerifyAndApiUrls(repoRef: RepoRef): string[] {
+  return [
+    `${CANONICAL_ORIGIN}/verify/${repoRef.owner}/${repoRef.name}`,
+    `${CANONICAL_ORIGIN}/api/${repoRef.owner}/${repoRef.name}.json`,
+  ];
+}
+
+/**
+ * Best-effort purge of every cached public URL for a repo — badge
+ * variants (spec overview Decision 11: 8 metrics × {flat,pill} ×
+ * {light,dark,auto} explicit-param URLs, plus one bare-default URL per
+ * metric), plus the single `/verify/:owner/:repo` and
+ * `/api/:owner/:repo.json` cache entries. Called (via `waitUntil`) after
+ * a refresh collect completes and after a settings toggle (both
+ * directions) — a toggle off→on must not leave a stale cached
+ * `not found`/`collecting` verify or API response outliving the toggle
+ * (production defect: toggle-cache-purge). A per-URL delete failure is
+ * swallowed — a purge miss just means that one variant converges on its
+ * own via TTL, and a purge must never fail the calling owner-route
+ * mutation. Label-override/cache-buster badge variants are intentionally
+ * not enumerated here — they converge by TTL (spec overview §Badge cache
+ * purge).
+ */
+export async function purgePublicUrls(repoRef: RepoRef): Promise<void> {
   const cache = caches.default;
+  const urls = [...buildBadgeUrlVariants(repoRef), ...buildVerifyAndApiUrls(repoRef)];
   await Promise.all(
-    buildBadgeUrlVariants(repoRef).map(async (url) => {
+    urls.map(async (url) => {
       try {
         await cache.delete(url);
       } catch {

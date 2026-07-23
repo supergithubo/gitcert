@@ -80,9 +80,14 @@ Signed JSON attestation for one repo, e.g.
 - **404 `{"error":"collecting"}`** — repo visible, no stats row yet.
   `Cache-Control: public, max-age=60`.
 - **404 `{"error":"not_found"}`** — hidden repo (unknown/excluded/removed/
-  suspended — one bucket, no existence oracle). `Cache-Control` identical
-  to the 200 case above (`max-age=300, s-maxage=1800, stale-while-revalidate=86400`).
-- Served through `caches.default`, keyed on the full request URL.
+  suspended — one bucket, no existence oracle). `Cache-Control: public,
+max-age=60` — same short TTL as the `collecting` case above (not the
+  200 case's), so a settings toggle off→on is backstopped by a short
+  client-side re-check even on a purge miss (fix: toggle-cache-purge).
+- Served through `caches.default`, keyed on the full request URL. A
+  settings toggle (either direction) or a manual refresh purges this
+  cache entry directly — see `POST /repos/:id/settings` and
+  `POST /repos/:id/refresh` under "Owner routes" below.
 
 ## `GET /verify/:owner/:repo`
 
@@ -104,9 +109,15 @@ badges' verified seal.
   `Cache-Control: public, max-age=60`. Renders a "collecting…" placeholder page.
 - **404 not found** — hidden repo (unknown/excluded/removed/suspended —
   one page and status for all four causes, no existence oracle).
-  `Cache-Control: public, max-age=300`.
+  `Cache-Control: public, max-age=60` — same short TTL as the collecting
+  case above (not the 200 case's `max-age=300`), so a settings toggle
+  off→on is backstopped by a short client-side re-check even on a purge
+  miss (fix: toggle-cache-purge).
 - No `ETag`/conditional-GET support on this route. Served through
-  `caches.default`, keyed on the full request URL.
+  `caches.default`, keyed on the full request URL. A settings toggle
+  (either direction) or a manual refresh purges this cache entry
+  directly — see `POST /repos/:id/settings` and `POST /repos/:id/refresh`
+  under "Owner routes" below.
 
 ## `GET /pubkey`
 
@@ -337,10 +348,15 @@ Toggles whether a repo is publicly exposed (`included`).
   not-owned, or removed — one indistinguishable bucket) →
   `404 { "error": "not_found" }`.
 - **Success:** `200 { "ok": true, "included": <bool> }`. After responding,
-  best-effort purges the repo's canonical badge URL cache entries via
-  `waitUntil` (8 metrics × {flat,pill} × {light,dark,auto}, plus the
-  bare-default URL per metric) so the dashboard's live preview reflects
-  the change immediately instead of waiting out the badge TTL.
+  best-effort purges every cached public URL for the repo via `waitUntil`
+  — the badge cache entries (8 metrics × {flat,pill} × {light,dark,auto},
+  plus the bare-default URL per metric), **plus** the `/verify/:owner/:repo`
+  and `/api/:owner/:repo.json` cache entries — so the dashboard's live
+  preview, the verify page, and the API response all reflect the change
+  immediately instead of waiting out their respective TTLs. Applies on
+  both toggle directions (fix: toggle-cache-purge — an off→on toggle
+  previously left a stale cached `not found` verify/api response for up
+  to 5 minutes, since only badge URLs were purged).
 
 ### `POST /repos/:id/refresh`
 
@@ -356,7 +372,8 @@ mint covers every repo GitHub returned for that installation).
 - **Rate limit:** if the target repo's `stats.collected_at` is within 5
   minutes → `429 { "error": "rate_limited" }`, no GitHub call.
 - **Success:** `202 { "ok": true }` immediately; `waitUntil`s
-  `runCollector({ installationId })` followed by the same badge-cache
-  purge as the settings route. `202`/`429` intentionally extend the
-  standard REST status table — the semantically correct codes for
-  "accepted, work continues asynchronously" and "rate limited".
+  `runCollector({ installationId })` followed by the same full public-URL
+  cache purge (badge + verify + api) as the settings route. `202`/`429`
+  intentionally extend the standard REST status table — the semantically
+  correct codes for "accepted, work continues asynchronously" and "rate
+  limited".

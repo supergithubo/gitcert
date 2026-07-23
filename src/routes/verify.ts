@@ -26,9 +26,13 @@ async function buildVerifyResponse(db: D1Database, owner: string, repo: string):
   const state = await selectPublicRepoState(db, owner, repo);
 
   if (state.visibility === 'hidden') {
-    // One page and status for every hidden/unknown cause — no existence oracle.
+    // One page and status for every hidden/unknown cause — no existence
+    // oracle. Shares the `collecting` tier's short TTL (not the `verify`
+    // tier's) so a toggle off→on's cache purge is backstopped by a fast
+    // client-side re-check even if a purge is ever missed (production
+    // defect: toggle-cache-purge).
     const html = await VerifyNotFoundPage({ owner, repo });
-    return htmlResponse(html, 404, CACHE_CONTROL.verify);
+    return htmlResponse(html, 404, CACHE_CONTROL.collecting);
   }
   if (state.visibility === 'collecting') {
     const html = await VerifyCollectingPage({ owner, repo });

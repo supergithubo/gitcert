@@ -143,7 +143,10 @@ describe('GET /verify/:owner/:repo', () => {
       suspendedResponse,
     ]) {
       expect(response.status).toBe(404);
-      expect(response.headers.get('Cache-Control')).toBe('public, max-age=300');
+      // Same short TTL as `collecting` (not the `verify` tier) — a
+      // toggle off→on must not leave a stale not-found cached beyond a
+      // short client-side window (production defect: toggle-cache-purge).
+      expect(response.headers.get('Cache-Control')).toBe('public, max-age=60');
       expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
     }
     expect(excludedBody).toBe(unknownBody);

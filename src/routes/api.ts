@@ -53,8 +53,12 @@ async function buildApiResponse(db: D1Database, owner: string, repo: string): Pr
   const state = await selectPublicRepoState(db, owner, repo);
 
   if (state.visibility === 'hidden') {
-    // Byte-identical for unknown/excluded/removed/suspended — no existence oracle.
-    return jsonResponse({ error: 'not_found' }, 404, CACHE_CONTROL.normal);
+    // Byte-identical for unknown/excluded/removed/suspended — no
+    // existence oracle. Shares the `collecting` tier's short TTL (not
+    // `normal`'s) so a toggle off→on's cache purge is backstopped by a
+    // fast client-side re-check even if a purge is ever missed
+    // (production defect: toggle-cache-purge).
+    return jsonResponse({ error: 'not_found' }, 404, CACHE_CONTROL.collecting);
   }
   if (state.visibility === 'collecting') {
     return jsonResponse({ error: 'collecting' }, 404, CACHE_CONTROL.collecting);

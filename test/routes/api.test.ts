@@ -149,9 +149,10 @@ describe('GET /api/:owner/:repo.json, /pubkey, /healthz', () => {
 
       for (const response of responses) {
         expect(response.status).toBe(404);
-        expect(response.headers.get('Cache-Control')).toBe(
-          'public, max-age=300, s-maxage=1800, stale-while-revalidate=86400',
-        );
+        // Same short TTL as `collecting` (not the `normal` tier) — a
+        // toggle off→on must not leave a stale not-found cached beyond a
+        // short client-side window (production defect: toggle-cache-purge).
+        expect(response.headers.get('Cache-Control')).toBe('public, max-age=60');
         expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
       }
       for (const body of bodies) {

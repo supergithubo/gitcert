@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Env } from '../env';
 import { runCollector } from '../collector/run';
-import { purgeBadgeUrls } from '../lib/cache';
+import { purgePublicUrls } from '../lib/cache';
 import { selectOwnedRepo, selectOwnedRepos, updateRepoIncluded } from '../lib/db';
 import { kickPostInstallCollect, parseInstallationId } from '../lib/postInstall';
 import {
@@ -126,7 +126,7 @@ dashboard.post('/repos/:id/settings', async (c) => {
 
   const repo = await selectOwnedRepo(c.env.DB, repoId, session.githubId);
   if (repo) {
-    c.executionCtx.waitUntil(purgeBadgeUrls({ owner: repo.owner, name: repo.name }));
+    c.executionCtx.waitUntil(purgePublicUrls({ owner: repo.owner, name: repo.name }));
   }
 
   return jsonResponse({ ok: true, included: parsed.included }, 200);
@@ -151,7 +151,7 @@ dashboard.post('/repos/:id/refresh', async (c) => {
 
   c.executionCtx.waitUntil(
     runCollector(c.env, { installationId: repo.installationId }).then(() =>
-      purgeBadgeUrls({ owner: repo.owner, name: repo.name }),
+      purgePublicUrls({ owner: repo.owner, name: repo.name }),
     ),
   );
 
