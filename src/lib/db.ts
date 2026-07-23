@@ -1,4 +1,4 @@
-import type { LanguageShare } from './types';
+import type { LanguageShare, PublicStats } from './types';
 
 /**
  * All SQL for gitcert lives here as typed functions with bound parameters
@@ -267,6 +267,154 @@ export async function upsertStats(db: D1Database, input: StatsInput): Promise<vo
       input.certSerial,
     )
     .run();
+}
+
+/** Identity fields a public surface (badge/API/verify) is allowed to render. */
+export interface PublicRepoRef {
+  owner: string;
+  name: string;
+  private: boolean;
+}
+
+/**
+ * Unknown repo, excluded (`included = 0`), removed, or the owning
+ * installation is suspended — one bucket by design (no existence oracle,
+ * architectures/multi-tenant + architectures/attestation).
+ */
+export interface PublicHiddenState {
+  visibility: 'hidden';
+}
+
+/** Repo is public and live, but no stats row exists yet. */
+export interface PublicCollectingState {
+  visibility: 'collecting';
+  repo: PublicRepoRef;
+}
+
+/** Repo is public, live, and has a stored signed snapshot. */
+export interface PublicReadyState {
+  visibility: 'ready';
+  repo: PublicRepoRef;
+  stats: PublicStats;
+  payloadJson: string;
+  signature: string;
+  certSerial: string;
+  collectedAt: string;
+}
+
+export type PublicRepoState = PublicHiddenState | PublicCollectingState | PublicReadyState;
+
+interface PublicRepoStateRow {
+  owner: string;
+  name: string;
+  private: number;
+  included: number;
+  removed_at: string | null;
+  suspended_at: string | null;
+  collected_at: string | null;
+  commits: number | null;
+  last_commit_at: string | null;
+  open_issues: number | null;
+  open_prs: number | null;
+  repo_created_at: string | null;
+  first_commit_at: string | null;
+  size_kb: number | null;
+  primary_language: string | null;
+  language_pct: number | null;
+  languages_json: string | null;
+  payload_json: string | null;
+  signature: string | null;
+  cert_serial: string | null;
+}
+
+/**
+ * The single read every public surface handler makes (badge/api/verify):
+ * one `SELECT` joining `repos` → `installations` → `stats`, keyed by
+ * `(owner, name)`. Collapses unknown / excluded / removed / suspended into
+ * one `hidden` bucket so callers cannot distinguish the cause (no existence
+ * oracle) — see architectures/attestation and architectures/multi-tenant.
+ */
+export async function selectPublicRepoState(
+  db: D1Database,
+  owner: string,
+  name: string,
+): Promise<PublicRepoState> {
+  const row = await db
+    .prepare(
+      `SELECT r.owner AS owner, r.name AS name, r.private AS private,
+              r.included AS included, r.removed_at AS removed_at,
+              i.suspended_at AS suspended_at,
+              s.collected_at AS collected_at, s.commits AS commits,
+              s.last_commit_at AS last_commit_at, s.open_issues AS open_issues,
+              s.open_prs AS open_prs, s.repo_created_at AS repo_created_at,
+              s.first_commit_at AS first_commit_at, s.size_kb AS size_kb,
+              s.primary_language AS primary_language, s.language_pct AS language_pct,
+              s.languages_json AS languages_json, s.payload_json AS payload_json,
+              s.signature AS signature, s.cert_serial AS cert_serial
+       FROM repos r
+       JOIN installations i ON i.id = r.installation_id
+       LEFT JOIN stats s ON s.repo_id = r.id
+       WHERE r.owner = ?1 AND r.name = ?2`,
+    )
+    .bind(owner, name)
+    .first<PublicRepoStateRow>();
+
+  if (!row || row.included !== 1 || row.removed_at !== null || row.suspended_at !== null) {
+    return { visibility: 'hidden' };
+  }
+
+  const repo: PublicRepoRef = { owner: row.owner, name: row.name, private: row.private === 1 };
+
+  if (
+    row.collected_at === null ||
+    row.payload_json === null ||
+    row.signature === null ||
+    row.cert_serial === null
+  ) {
+    return { visibility: 'collecting', repo };
+  }
+
+  const languages: LanguageShare[] = row.languages_json ? JSON.parse(row.languages_json) : [];
+  const stats: PublicStats = {
+    commits: row.commits ?? 0,
+    lastCommitAt: row.last_commit_at,
+    openIssues: row.open_issues ?? 0,
+    openPrs: row.open_prs ?? 0,
+    repoCreatedAt: row.repo_created_at,
+    firstCommitAt: row.first_commit_at,
+    sizeKb: row.size_kb,
+    primaryLanguage: row.primary_language,
+    languagePct: row.language_pct,
+    languages,
+  };
+
+  return {
+    visibility: 'ready',
+    repo,
+    stats,
+    payloadJson: row.payload_json,
+    signature: row.signature,
+    certSerial: row.cert_serial,
+    collectedAt: row.collected_at,
+  };
+}
+
+/**
+ * Oldest `collected_at` across included, non-removed repos of non-suspended
+ * installations — the `/healthz` lag input. `null` when no stats exist yet
+ * (SPEC.md §5). Pure query: the caller computes `now - oldest`.
+ */
+export async function selectOldestCollectedAt(db: D1Database): Promise<string | null> {
+  const row = await db
+    .prepare(
+      `SELECT MIN(s.collected_at) AS oldest
+       FROM stats s
+       JOIN repos r ON r.id = s.repo_id
+       JOIN installations i ON i.id = r.installation_id
+       WHERE r.included = 1 AND r.removed_at IS NULL AND i.suspended_at IS NULL`,
+    )
+    .first<{ oldest: string | null }>();
+  return row?.oldest ?? null;
 }
 
 /** Batched upsert of multiple repos' stats snapshots in one round trip (one installation's collector pass). */

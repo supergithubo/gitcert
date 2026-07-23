@@ -1,0 +1,98 @@
+/*
+ * GitCert page styles — Tailwind v4, CSS-first config (tailwind rules).
+ * Theme tokens are taken verbatim from artifacts/design/tokens.md; dark
+ * values swap via prefers-color-scheme (no toggle in M2 — design decision).
+ * Badge SVG colors are NOT here: badges are self-contained templates.
+ */
+
+@import 'tailwindcss';
+
+@source '../pages';
+
+:root {
+  --paper: #faf9f6;
+  --ink: #1c1b19;
+  --body: #4a4842;
+  --muted: #8a887e;
+  --soft: #6c6b63;
+  --faint: #a6a49a;
+  --hair: rgba(28, 27, 25, 0.14);
+  --hair2: rgba(28, 27, 25, 0.1);
+  --hair-strong: rgba(28, 27, 25, 0.16);
+  --card: #ffffff;
+  --panel: #f7f5f0;
+  --panel2: #f4f2ec;
+  --field: #faf9f6;
+  --accent: #2f6d4f;
+  --avatar: #e9e7e0;
+  --dot: #d9d6cd;
+  --nav: rgba(250, 249, 246, 0.9);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #1b1a18;
+    --ink: #e8e6e0;
+    --body: #bab7ad;
+    --muted: #98958c;
+    --soft: #918f86;
+    --faint: #6f6d65;
+    --hair: rgba(232, 230, 224, 0.15);
+    --hair2: rgba(232, 230, 224, 0.1);
+    --hair-strong: rgba(232, 230, 224, 0.2);
+    --card: #232220;
+    --panel: #201f1c;
+    --panel2: #26241f;
+    --field: #1b1a18;
+    --accent: #5aa07d;
+    --avatar: #2f2d29;
+    --dot: #3a3833;
+    --nav: rgba(27, 26, 24, 0.9);
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-body: var(--body);
+  --color-muted: var(--muted);
+  --color-soft: var(--soft);
+  --color-faint: var(--faint);
+  --color-hair: var(--hair);
+  --color-hair2: var(--hair2);
+  --color-hair-strong: var(--hair-strong);
+  --color-card: var(--card);
+  --color-panel: var(--panel);
+  --color-panel2: var(--panel2);
+  --color-field: var(--field);
+  --color-accent: var(--accent);
+  --color-avatar: var(--avatar);
+  --color-dot: var(--dot);
+  --color-nav: var(--nav);
+  --font-display:
+    'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  --font-mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* Base element styling ported from the design's shared stylesheet. */
+body {
+  background: var(--paper);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+a[data-nav]:hover {
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(90, 160, 125, 0.28);
+}

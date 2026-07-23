@@ -14,5 +14,9 @@ migrations_dir = "migrations"
 [triggers]
 crons = ["*/15 * * * *"]
 
+# Compiled page stylesheet (npm run build:css → public/styles.css).
+[assets]
+directory = "public"
+
 [vars]
 GITHUB_APP_ID = ""

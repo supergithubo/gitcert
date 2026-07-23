@@ -1,0 +1,111 @@
+/**
+ * Cache-Control policy constants and `caches.default` mechanics shared by
+ * every public GET route (badge/api/verify/pubkey) — architectures/edge-cache.
+ * `/healthz` deliberately never imports `edgeCache` (SPEC.md §5, `no-store`).
+ */
+
+/** CORS header every public GET sends, including on error responses (SPEC.md §5). */
+export const CORS_ALLOW_ALL: Record<string, string> = { 'Access-Control-Allow-Origin': '*' };
+
+/** Named `Cache-Control` values for the M2 public surfaces (SPEC.md §9, spec overview §Route Contracts). */
+export const CACHE_CONTROL = {
+  /** Badge/API 200 responses (normal + stale). */
+  normal: 'public, max-age=300, s-maxage=1800, stale-while-revalidate=86400',
+  /** Badge/API/verify `collecting…` responses — short TTL so first-install state clears fast. */
+  collecting: 'public, max-age=60',
+  /** The verify certificate (normal + not-found) — simpler policy than badge/API, no CDN/SWR tiers. */
+  verify: 'public, max-age=300',
+  /** `/pubkey`. */
+  pubkey: 'public, max-age=86400',
+  /** `/healthz` only — bypasses `caches.default` entirely (operational probe, freshness is the point). */
+  noStore: 'no-store',
+} as const;
+
+/**
+ * Builds a strong ETag value (SPEC.md §5, spec overview's label-hash
+ * clarification): `"cert_serial:metric:style:theme"`, with
+ * `:sha256(label)[:8]` appended when a label override is present so the
+ * ETag varies whenever rendered content varies. Callers only invoke this
+ * when a `cert_serial` exists — `collecting…`/`not found` carry no ETag.
+ */
+export async function buildEtag(parts: readonly string[], label?: string): Promise<string> {
+  let value = parts.join(':');
+  if (label) {
+    value += `:${await sha256Hex(label)}`;
+  }
+  return `"${value}"`;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  );
+  return hex.slice(0, 8);
+}
+
+/** True when `ifNoneMatch` (a raw `If-None-Match` header value) matches `etag` exactly, or is `*`. */
+export function matchesEtag(ifNoneMatch: string | null, etag: string): boolean {
+  if (!ifNoneMatch) return false;
+  const trimmed = ifNoneMatch.trim();
+  if (trimmed === '*') return true;
+  return trimmed
+    .split(',')
+    .map((candidate) => candidate.trim())
+    .includes(etag);
+}
+
+/**
+ * Downgrades `response` to a bodyless 304 when the request's
+ * `If-None-Match` matches the response's own `ETag` header. Only
+ * `ETag`/`Cache-Control`/CORS headers are carried onto the 304 — a 304
+ * must not carry representation headers like `Content-Type`/`Content-Length`.
+ * Responses with no `ETag` (collecting/not-found/pubkey) pass through
+ * unchanged, since they are never conditionally requested.
+ */
+export function withConditionalGet(request: Request, response: Response): Response {
+  const etag = response.headers.get('ETag');
+  if (!etag || !matchesEtag(request.headers.get('If-None-Match'), etag)) {
+    return response;
+  }
+  const headers = new Headers();
+  headers.set('ETag', etag);
+  const cacheControl = response.headers.get('Cache-Control');
+  if (cacheControl) headers.set('Cache-Control', cacheControl);
+  const cors = response.headers.get('Access-Control-Allow-Origin');
+  if (cors) headers.set('Access-Control-Allow-Origin', cors);
+  return new Response(null, { status: 304, headers });
+}
+
+/** The subset of `ExecutionContext` this module needs — narrower than Hono's or the ambient Workers type, so either satisfies it. */
+export interface WaitUntilContext {
+  waitUntil(promise: Promise<unknown>): void;
+}
+
+/**
+ * Wraps a route handler with `caches.default`, keyed on the full request
+ * URL (owner/repo/metric/style/theme/label all live in the URL, so no
+ * variant bleeds — architectures/edge-cache). On a hit, the cached
+ * response is returned without calling `handler` (no D1 read). On a miss,
+ * `handler` runs, and the response is stored via `ctx.waitUntil` before
+ * being returned — skipped when the response's `Cache-Control` is
+ * `no-store` or missing, so error/edge responses that opt out stay
+ * uncached.
+ */
+export async function edgeCache(
+  request: Request,
+  ctx: WaitUntilContext,
+  handler: () => Promise<Response>,
+): Promise<Response> {
+  const cache = caches.default;
+  const cacheKey = new Request(request.url, request);
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  const response = await handler();
+  const cacheControl = response.headers.get('Cache-Control');
+  if (cacheControl && !cacheControl.includes('no-store')) {
+    ctx.waitUntil(cache.put(cacheKey, response.clone()));
+  }
+  return response;
+}

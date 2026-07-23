@@ -2,6 +2,8 @@ import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   markRepoRemoved,
+  selectOldestCollectedAt,
+  selectPublicRepoState,
   selectReposForInstallation,
   selectStaleInstallations,
   suspendInstallation,
@@ -214,5 +216,156 @@ describe('db.ts', () => {
       { repo_id: 60, commits: 10 },
       { repo_id: 61, commits: 5 },
     ]);
+  });
+
+  describe('selectPublicRepoState', () => {
+    it('returns hidden for an unknown owner/name (edge case: no existence oracle)', async () => {
+      const state = await selectPublicRepoState(env.DB, 'nobody', 'nothing');
+      expect(state).toEqual({ visibility: 'hidden' });
+    });
+
+    it('returns hidden for an excluded repo (included = 0), byte-identical to unknown', async () => {
+      await upsertInstallation(env.DB, {
+        id: 20,
+        accountLogin: 'wnston',
+        accountId: 2000,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 20, [
+        { id: 200, owner: 'wnston', name: 'excluded-repo', private: true },
+      ]);
+      await env.DB.prepare('UPDATE repos SET included = 0 WHERE id = ?1').bind(200).run();
+
+      const state = await selectPublicRepoState(env.DB, 'wnston', 'excluded-repo');
+      expect(state).toEqual({ visibility: 'hidden' });
+    });
+
+    it('returns hidden for a removed repo, byte-identical to unknown', async () => {
+      await upsertInstallation(env.DB, {
+        id: 21,
+        accountLogin: 'wnston',
+        accountId: 2100,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 21, [
+        { id: 210, owner: 'wnston', name: 'removed-repo', private: true },
+      ]);
+      await markRepoRemoved(env.DB, 210, '2026-07-22T00:00:00Z');
+
+      const state = await selectPublicRepoState(env.DB, 'wnston', 'removed-repo');
+      expect(state).toEqual({ visibility: 'hidden' });
+    });
+
+    it('returns hidden when the owning installation is suspended, byte-identical to unknown', async () => {
+      await upsertInstallation(env.DB, {
+        id: 22,
+        accountLogin: 'suspended-owner',
+        accountId: 2200,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 22, [
+        { id: 220, owner: 'suspended-owner', name: 'suspended-repo', private: true },
+      ]);
+      await suspendInstallation(env.DB, 22, '2026-07-22T00:00:00Z');
+
+      const state = await selectPublicRepoState(env.DB, 'suspended-owner', 'suspended-repo');
+      expect(state).toEqual({ visibility: 'hidden' });
+    });
+
+    it('returns collecting for a live, included repo with no stats row yet', async () => {
+      await upsertInstallation(env.DB, {
+        id: 23,
+        accountLogin: 'wnston',
+        accountId: 2300,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 23, [
+        { id: 230, owner: 'wnston', name: 'new-repo', private: true },
+      ]);
+
+      const state = await selectPublicRepoState(env.DB, 'wnston', 'new-repo');
+      expect(state).toEqual({
+        visibility: 'collecting',
+        repo: { owner: 'wnston', name: 'new-repo', private: true },
+      });
+    });
+
+    it('returns ready with mapped stats and the verbatim signed payload (happy path)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 24,
+        accountLogin: 'wnston',
+        accountId: 2400,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 24, [
+        { id: 240, owner: 'wnston', name: 'ready-repo', private: true },
+      ]);
+      await upsertStats(
+        env.DB,
+        fixtureStats(240, {
+          payloadJson: '{"cert_serial":"GC-ABCDEF"}',
+          signature: 'sig-240',
+          certSerial: 'GC-ABCDEF',
+        }),
+      );
+
+      const state = await selectPublicRepoState(env.DB, 'wnston', 'ready-repo');
+      expect(state).toEqual({
+        visibility: 'ready',
+        repo: { owner: 'wnston', name: 'ready-repo', private: true },
+        stats: {
+          commits: 10,
+          lastCommitAt: '2026-07-21T00:00:00Z',
+          openIssues: 1,
+          openPrs: 0,
+          repoCreatedAt: '2020-01-01T00:00:00Z',
+          firstCommitAt: '2020-01-01T00:00:00Z',
+          sizeKb: 100,
+          primaryLanguage: 'TypeScript',
+          languagePct: 90,
+          languages: [{ name: 'TypeScript', pct: 90 }],
+        },
+        payloadJson: '{"cert_serial":"GC-ABCDEF"}',
+        signature: 'sig-240',
+        certSerial: 'GC-ABCDEF',
+        collectedAt: '2026-07-22T00:00:00Z',
+      });
+    });
+  });
+
+  describe('selectOldestCollectedAt', () => {
+    it('returns null when no stats exist yet (edge case)', async () => {
+      await expect(selectOldestCollectedAt(env.DB)).resolves.toBeNull();
+    });
+
+    it('returns the minimum collected_at across included, live repos only (happy path)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 25,
+        accountLogin: 'wnston',
+        accountId: 2500,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 25, [
+        { id: 250, owner: 'wnston', name: 'old-repo', private: true },
+        { id: 251, owner: 'wnston', name: 'new-repo', private: true },
+      ]);
+      await upsertStats(env.DB, fixtureStats(250, { collectedAt: '2026-07-01T00:00:00Z' }));
+      await upsertStats(env.DB, fixtureStats(251, { collectedAt: '2026-07-22T00:00:00Z' }));
+
+      // A suspended installation's fresher stats must not win the MIN.
+      await upsertInstallation(env.DB, {
+        id: 26,
+        accountLogin: 'suspended-owner',
+        accountId: 2600,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 26, [
+        { id: 260, owner: 'suspended-owner', name: 'suspended-repo', private: true },
+      ]);
+      await upsertStats(env.DB, fixtureStats(260, { collectedAt: '2020-01-01T00:00:00Z' }));
+      await suspendInstallation(env.DB, 26, '2026-07-22T00:00:00Z');
+
+      await expect(selectOldestCollectedAt(env.DB)).resolves.toBe('2026-07-01T00:00:00Z');
+    });
   });
 });

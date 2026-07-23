@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sign, verify } from '../../src/lib/sign';
+import { derivePublicKey, sign, verify } from '../../src/lib/sign';
 
 // Fixed synthetic test seed (32 bytes, 1..32) — not a real secret, never
 // used outside tests.
@@ -28,5 +28,41 @@ describe('sign / verify', () => {
     const signatureA = await sign(payload, TEST_SEED);
     const signatureB = await sign(payload, otherSeed);
     expect(signatureA).not.toBe(signatureB);
+  });
+});
+
+describe('derivePublicKey', () => {
+  it('derives a raw 32-byte key and matching JWK that verify a real signature (happy path)', async () => {
+    const { raw, jwk } = await derivePublicKey(TEST_SEED);
+    expect(jwk).toMatchObject({ kty: 'OKP', crv: 'Ed25519' });
+    expect(typeof jwk.x).toBe('string');
+
+    const rawBytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+    expect(rawBytes.length).toBe(32);
+
+    const publicKey = await crypto.subtle.importKey(
+      'jwk',
+      { kty: 'OKP', crv: 'Ed25519', x: jwk.x },
+      'Ed25519',
+      true,
+      ['verify'],
+    );
+    const payload = '{"cert_serial":"GC-000000"}';
+    const signature = await sign(payload, TEST_SEED);
+    const signatureBytes = Uint8Array.from(atob(signature), (c) => c.charCodeAt(0));
+    await expect(
+      crypto.subtle.verify('Ed25519', publicKey, signatureBytes, new TextEncoder().encode(payload)),
+    ).resolves.toBe(true);
+  });
+
+  it('is deterministic: the same seed always derives the same public key', async () => {
+    const first = await derivePublicKey(TEST_SEED);
+    const second = await derivePublicKey(TEST_SEED);
+    expect(second.raw).toBe(first.raw);
+    expect(second.jwk.x).toBe(first.jwk.x);
+  });
+
+  it('throws when SIGNING_KEY does not decode to a 32-byte seed (error path)', async () => {
+    await expect(derivePublicKey(btoa('too-short'))).rejects.toThrow(/32-byte/);
   });
 });

@@ -1,6 +1,7 @@
 node_modules
 .wrangler
 dist
+public
 package-lock.json
 migrations
 *.sql

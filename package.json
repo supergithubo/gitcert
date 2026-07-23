@@ -6,6 +6,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "build:css": "tailwindcss -i src/styles/app.css -o public/styles.css --minify",
     "lint": "prettier --check .",
     "check": "npm run typecheck && wrangler deploy --dry-run",
     "dev": "wrangler dev"
@@ -16,8 +17,10 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.7",
     "@cloudflare/workers-types": "^5.20260721.1",
+    "@tailwindcss/cli": "^4.3.3",
     "@types/node": "^22.15.17",
     "prettier": "^3.9.6",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10",
     "wrangler": "^4.113.0"

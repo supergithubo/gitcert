@@ -74,6 +74,21 @@ export async function sign(payloadJson: string, seedBase64: string): Promise<str
   return bytesToBase64(new Uint8Array(signature));
 }
 
+/**
+ * Derives the Ed25519 public key from `SIGNING_KEY` at request time (no
+ * persistence, no GitHub) — backs `GET /pubkey`. Returns both the raw
+ * 32-byte key (base64) and its JWK form so the route can serve either
+ * representation without a second key derivation.
+ */
+export async function derivePublicKey(
+  seedBase64: string,
+): Promise<{ raw: string; jwk: JsonWebKey }> {
+  const { publicKey } = await importSigningKeyPair(seedBase64);
+  const rawBytes = (await crypto.subtle.exportKey('raw', publicKey)) as ArrayBuffer;
+  const jwk = (await crypto.subtle.exportKey('jwk', publicKey)) as JsonWebKey;
+  return { raw: bytesToBase64(new Uint8Array(rawBytes)), jwk };
+}
+
 /** Verifies a base64 signature against `payloadJson` using the public key derived from `seedBase64`. */
 export async function verify(
   payloadJson: string,
