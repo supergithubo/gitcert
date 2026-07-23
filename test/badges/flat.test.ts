@@ -89,6 +89,38 @@ describe('flatBadge', () => {
     }
   });
 
+  // Multi-badge-in-one-document class: a fixed clip id resolves document-wide
+  // to the FIRST badge's clipPath when several flat badges are inlined in one
+  // page, truncating every subsequent badge (shipped as a live landing defect).
+  describe('clip ids across one document', () => {
+    it('gives distinct badges unique clipPath ids in combined markup', () => {
+      const badges = [
+        flatBadge(badgeProps('commits', 'normal', 'flat', 'auto')),
+        flatBadge(badgeProps('last-commit', 'normal', 'flat', 'auto')),
+        flatBadge(badgeProps('first-commit', 'normal', 'flat', 'auto')),
+        flatBadge(badgeProps('language', 'normal', 'flat', 'auto')),
+      ];
+      const document = badges.join('');
+      const ids = [...document.matchAll(/<clipPath id="([^"]+)"/g)].map((m) => m[1]);
+      expect(ids).toHaveLength(badges.length);
+      expect(new Set(ids).size).toBe(badges.length);
+    });
+
+    it('references each badge clip by its own id', () => {
+      for (const metric of ALL_METRICS) {
+        const svg = flatBadge(badgeProps(metric, 'normal', 'flat', 'light'));
+        const id = /<clipPath id="([^"]+)"/.exec(svg)?.[1];
+        expect(id).toBeTruthy();
+        expect(svg).toContain(`clip-path="url(#${id})"`);
+      }
+    });
+
+    it('derives the id deterministically from props (same props → same bytes)', () => {
+      const props = badgeProps('commits', 'normal', 'flat', 'auto');
+      expect(flatBadge(props)).toBe(flatBadge(badgeProps('commits', 'normal', 'flat', 'auto')));
+    });
+  });
+
   it('dispatches through renderBadge', () => {
     const props = badgeProps('commits', 'normal', 'flat', 'light');
     expect(renderBadge(props)).toBe(flatBadge(props));

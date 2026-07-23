@@ -1,8 +1,9 @@
 /**
  * Shared page shell (hono rules: head, stylesheet, nav — pages compose it,
- * never duplicate it). Ported from the verify mock: the M2 nav renders only
- * the logo/wordmark and "View on GitHub". Theme follows
- * `prefers-color-scheme` — the design-tool toggle was not ported.
+ * never duplicate it). The nav renders the logo/wordmark, "View on GitHub",
+ * and the theme toggle from the mocks (restored by user decision, reversing
+ * the M2 "no toggle" call). Theme defaults to `prefers-color-scheme`; the
+ * toggle sets `data-gc-theme` on <html> and persists it in localStorage.
  */
 
 import { raw } from 'hono/html';
@@ -10,6 +11,42 @@ import type { Child } from 'hono/jsx';
 import { sealSvg } from '../badges/seal';
 
 export const GITHUB_REPO_URL = 'https://github.com/supergithubo/gitcert';
+
+/**
+ * First-paint theme restore. Runs inline in <head> BEFORE the stylesheet
+ * paints so a persisted theme never flashes the media-query default. Like
+ * the verify-button script (the sanctioned inline-JS precedent), it is a
+ * constant string with no interpolated user data — it only reads the
+ * localStorage key the toggle writes and whitelists its two values.
+ */
+const THEME_INIT_SCRIPT =
+  `(function () {` +
+  `try {` +
+  `var t = localStorage.getItem('gc-theme');` +
+  `if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-gc-theme', t);` +
+  `} catch (e) {}` +
+  `})();`;
+
+/**
+ * Header toggle behavior: derives the CURRENT effective theme (explicit
+ * attribute, else prefers-color-scheme), flips it, sets `data-gc-theme` on
+ * <html> (app.css attribute scopes override the media default and re-color
+ * inline auto badges via the `--gc-*` svg overrides), and persists the
+ * choice. Constant string, no interpolated user data.
+ */
+const THEME_TOGGLE_SCRIPT =
+  `(function () {` +
+  `var btn = document.getElementById('gc-theme-toggle');` +
+  `if (!btn) return;` +
+  `btn.addEventListener('click', function () {` +
+  `var root = document.documentElement;` +
+  `var current = root.getAttribute('data-gc-theme') || ` +
+  `(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');` +
+  `var next = current === 'dark' ? 'light' : 'dark';` +
+  `root.setAttribute('data-gc-theme', next);` +
+  `try { localStorage.setItem('gc-theme', next); } catch (e) {}` +
+  `});` +
+  `})();`;
 
 /** GitHub octocat mark path (24×24 viewBox) — shared by the nav and the landing CTA. */
 export const GITHUB_MARK_PATH =
@@ -24,11 +61,13 @@ export function Layout(props: { title: string; children?: Child }) {
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
           <title>{props.title}</title>
+          <script>{raw(THEME_INIT_SCRIPT)}</script>
           <link rel="stylesheet" href="/styles.css" />
         </head>
         <body class="min-h-screen bg-paper font-display text-ink antialiased">
           <Nav />
           {props.children}
+          <script>{raw(THEME_TOGGLE_SCRIPT)}</script>
         </body>
       </html>
     </>
@@ -56,8 +95,42 @@ function Nav() {
             </svg>
             View on GitHub
           </a>
+          <ThemeToggle />
         </div>
       </div>
     </div>
+  );
+}
+
+/** Mock sun glyph (shown in dark mode — click returns to light). */
+const SUN_ICON =
+  `<svg data-theme-icon="sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
+  `<circle cx="12" cy="12" r="4"/>` +
+  `<path d="M12 2v2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M20 12h2"/><path d="m17.66 17.66 1.41 1.41"/>` +
+  `<path d="M12 20v2"/><path d="m6.34 17.66-1.41 1.41"/><path d="M2 12h2"/><path d="m4.93 4.93 1.41 1.41"/>` +
+  `</svg>`;
+
+/** Mock moon glyph (shown in light mode — click switches to dark). */
+const MOON_ICON =
+  `<svg data-theme-icon="moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
+  `<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>` +
+  `</svg>`;
+
+/**
+ * Header theme toggle (mock modeBtnStyle: 30px circle, hair-strong border,
+ * ink glyph). Both glyphs are rendered; app.css swaps visibility from the
+ * effective theme so the server markup stays theme-agnostic.
+ */
+function ThemeToggle() {
+  return (
+    <button
+      id="gc-theme-toggle"
+      type="button"
+      aria-label="toggle theme"
+      class="grid h-[30px] w-[30px] cursor-pointer place-items-center rounded-full border border-hair-strong bg-transparent p-0 text-ink"
+    >
+      {raw(SUN_ICON)}
+      {raw(MOON_ICON)}
+    </button>
   );
 }

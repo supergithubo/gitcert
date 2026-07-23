@@ -1,15 +1,24 @@
 /*
  * GitCert page styles — Tailwind v4, CSS-first config (tailwind rules).
- * Theme tokens are taken verbatim from artifacts/design/tokens.md; dark
- * values swap via prefers-color-scheme (no toggle in M2 — design decision).
- * Badge SVG colors are NOT here: badges are self-contained templates.
+ * Theme tokens are taken verbatim from artifacts/design/tokens.md.
+ *
+ * Theme selection (mock landing-unauth.dc.html:35-46 structure, adapted):
+ * prefers-color-scheme is the DEFAULT; an explicit `data-gc-theme` attribute
+ * on <html> (set by the header toggle, persisted in localStorage) OVERRIDES
+ * it. `:root[data-gc-theme=…]` is (0,2,0) — it beats the media-scoped
+ * `:root` (0,1,0) regardless of source order, so the attribute always wins.
+ *
+ * Badge SVG colors are NOT here — badges stay self-contained — EXCEPT the
+ * `--gc-*` overrides below, which exist so the toggle re-colors inline
+ * auto-theme badges (see the comment on that block).
  */
 
 @import 'tailwindcss';
 
 @source '../pages';
 
-:root {
+:root,
+:root[data-gc-theme='light'] {
   /*
    * Dashboard badge-preview panel background (mock dashboard.dc.html
    * previewStyle): fixed #f7f5f0 / #1b1a18 per the RESOLVED badge theme,
@@ -60,6 +69,97 @@
   }
 }
 
+:root[data-gc-theme='dark'] {
+  --preview: #1b1a18;
+  --paper: #1b1a18;
+  --ink: #e8e6e0;
+  --body: #bab7ad;
+  --muted: #98958c;
+  --soft: #918f86;
+  --faint: #6f6d65;
+  --hair: rgba(232, 230, 224, 0.15);
+  --hair2: rgba(232, 230, 224, 0.1);
+  --hair-strong: rgba(232, 230, 224, 0.2);
+  --card: #232220;
+  --panel: #201f1c;
+  --panel2: #26241f;
+  --field: #1b1a18;
+  --accent: #5aa07d;
+  --avatar: #2f2d29;
+  --dot: #3a3833;
+  --nav: rgba(27, 26, 24, 0.9);
+}
+
+/*
+ * Inline auto-theme badge re-coloring for the toggle. Auto badges embed
+ * `svg{--gc-*:…}` plus a prefers-color-scheme block in their own <style>
+ * (src/badges/theme.ts resolveColors); inlined in a page, those rules are
+ * document-wide but only (0,0,1). These (0,2,1) attribute-scoped rules beat
+ * BOTH the badge's light table and its media-query dark table, so flipping
+ * data-gc-theme re-colors inline badges; with no attribute set, the badge's
+ * internal media query governs, matching the page default. Values mirror
+ * src/badges/theme.ts (FLAT_COLORS normal state + PILL_COLORS) — keep in
+ * sync; the theme-consistency page test guards this.
+ */
+:root[data-gc-theme='light'] svg {
+  --gc-labelBg: #4b4a45;
+  --gc-labelText: #f2f0ea;
+  --gc-valueBg: #2f6d4f;
+  --gc-valueText: #ffffff;
+  --gc-seal: #ffffff;
+  --gc-bg: #faf9f6;
+  --gc-border: rgba(28, 27, 25, 0.16);
+  --gc-tx: #24231f;
+  --gc-muted: #6c6b63;
+}
+
+:root[data-gc-theme='dark'] svg {
+  --gc-labelBg: #33322e;
+  --gc-labelText: #dcdad2;
+  --gc-valueBg: #2f6d4f;
+  --gc-valueText: #ffffff;
+  --gc-seal: #ffffff;
+  --gc-bg: #232220;
+  --gc-border: rgba(232, 230, 224, 0.22);
+  --gc-tx: #e8e6e0;
+  --gc-muted: #a29f96;
+}
+
+/*
+ * Theme-toggle icon swap (mock: moon shown in light mode, sun in dark).
+ * Media query sets the no-attribute default; the (0,3,0) attribute-scoped
+ * rules override it when the toggle has been used.
+ */
+[data-theme-icon='sun'] {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme-icon='sun'] {
+    display: block;
+  }
+
+  [data-theme-icon='moon'] {
+    display: none;
+  }
+}
+
+:root[data-gc-theme='light'] [data-theme-icon='sun'] {
+  display: none;
+}
+
+:root[data-gc-theme='light'] [data-theme-icon='moon'] {
+  display: block;
+}
+
+:root[data-gc-theme='dark'] [data-theme-icon='sun'] {
+  display: block;
+}
+
+:root[data-gc-theme='dark'] [data-theme-icon='moon'] {
+  display: none;
+}
+
 @theme inline {
   --color-paper: var(--paper);
   --color-ink: var(--ink);
@@ -86,23 +186,32 @@
   --font-mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
 }
 
-/* Base element styling ported from the design's shared stylesheet. */
+/*
+ * Base element styling ported from the design's shared stylesheet. The link
+ * rules live in @layer base so Tailwind color utilities (layered later)
+ * override them — the mock's equivalents were inline styles, which
+ * out-cascaded its own a{} rule. Unlayered, this rule beat text-paper on
+ * the hero CTA and text-muted on the nav link, leaking accent green into
+ * non-verified surfaces (design reserves accent for verified states).
+ */
 body {
   background: var(--paper);
 }
 
-a {
-  color: var(--accent);
-  text-decoration: none;
-}
+@layer base {
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
 
-a:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
+  a:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 
-a[data-nav]:hover {
-  text-decoration: none;
+  a[data-nav]:hover {
+    text-decoration: none;
+  }
 }
 
 ::selection {

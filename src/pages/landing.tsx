@@ -5,10 +5,10 @@
  * component: the route handler passes typed props; nothing here reads D1,
  * env, or the clock. Zero client JS.
  *
- * Not ported (spec do-not-port list): design-tool runtime, theme toggle
- * (pages follow prefers-color-scheme — M2 precedent), hover/draw keyframe
- * animations, vestigial closed-issues/merged-prs data, the dead revoked
- * seal branch. Copy is the patched mock copy verbatim (decision #5: never
+ * Not ported (spec do-not-port list): design-tool runtime, hover/draw
+ * keyframe animations, vestigial closed-issues/merged-prs data, the dead
+ * revoked seal branch. The theme toggle lives in the shared layout
+ * (restored by user decision, reversing the M2 "no toggle" call). Copy is the patched mock copy verbatim (decision #5: never
  * "metadata-only", never "can never read your source"); the collector and
  * permissions mentions link to the public repo.
  */
@@ -216,18 +216,32 @@ const LOCK_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" s
 
 const OCTOCAT_OUTLINE_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>`;
 
+/**
+ * Trust-strip anchors keep the mock's muted reference treatment (the
+ * `<yoursite>.io/api ↗` style): soft/muted with a persistent underline,
+ * accent only on hover — accent green is reserved for verified states.
+ */
+const TRUST_LINK_CLASS = 'text-soft underline underline-offset-2 hover:text-accent';
+
 function TrustStrip() {
   return (
     <div class="border-t border-hair bg-panel">
       <div class="mx-auto grid max-w-[1000px] grid-cols-3 gap-8 px-7 py-10">
         <TrustItem icon={LOCK_ICON} heading="read-only permissions">
-          GitCert holds <a href={GITHUB_REPO_URL}>read-only permissions</a> and keeps only
-          aggregates — commit counts, timestamps, issue and PR totals. It never stores your code or
-          writes a byte to your repositories.
+          GitCert holds{' '}
+          <a href={GITHUB_REPO_URL} class={TRUST_LINK_CLASS}>
+            read-only permissions
+          </a>{' '}
+          and keeps only aggregates — commit counts, timestamps, issue and PR totals. It never
+          stores your code or writes a byte to your repositories.
         </TrustItem>
         <TrustItem icon={OCTOCAT_OUTLINE_ICON} heading="open source collector">
-          The collector service is <a href={GITHUB_REPO_URL}>fully open source</a> — audit exactly
-          which fields are read and how they're signed. Nothing runs behind closed doors.
+          The collector service is{' '}
+          <a href={GITHUB_REPO_URL} class={TRUST_LINK_CLASS}>
+            fully open source
+          </a>{' '}
+          — audit exactly which fields are read and how they're signed. Nothing runs behind closed
+          doors.
         </TrustItem>
         <TrustItem
           icon={sealSvg({ size: 20, kind: 'check', color: 'var(--accent)' })}

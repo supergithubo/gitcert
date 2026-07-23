@@ -13,6 +13,8 @@ import type { BadgeProps } from './types';
 
 const H = 20;
 const FONT_SIZE = 11;
+const FNV_OFFSET = 0x811c9dc5;
+const FNV_PRIME = 0x01000193;
 const CHAR_W = 6.55;
 const PAD_X = 6;
 const SEAL_SIZE = 13;
@@ -20,6 +22,27 @@ const SEAL_GAP = 5;
 const TEXT_Y = 14;
 const MONO = "'SF Mono',ui-monospace,Menlo,Consolas,monospace";
 const PULSE_KEYFRAMES = '@keyframes gcpulse{0%,100%{opacity:1}50%{opacity:.42}}';
+
+/**
+ * Per-instance clip id, derived deterministically from the badge's own
+ * props (FNV-1a 32-bit → base36). A FIXED id collides document-wide when
+ * several flat badges are inlined in one page (the landing README card):
+ * `url(#gcf)` then resolves to the FIRST badge's clip and truncates the
+ * rest. Deriving from props keeps output byte-deterministic per
+ * (stats, metric, style, theme) — same props → same id → same ETag
+ * (svg-badges compatibility rules) — while distinct badges get distinct
+ * ids. Identical badges repeated in one document share an id, which is
+ * harmless: their clip geometry is identical too.
+ */
+function clipId(props: BadgeProps, valueText: string): string {
+  const key = `${props.metric}|${props.label}|${valueText}|${props.state.kind}|${props.theme}|${props.title}`;
+  let h = FNV_OFFSET;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, FNV_PRIME);
+  }
+  return `gcf-${(h >>> 0).toString(36)}`;
+}
 
 /** Computed flat badge geometry — exported for width-math tests. */
 export function flatWidths(label: string, valueText: string, hasSeal: boolean) {
@@ -48,6 +71,7 @@ export function flatBadge(props: BadgeProps): string {
   if (sealKind && 'seal' in stateColors) roles['seal'] = stateColors.seal;
   const { color, themeCss } = resolveColors(roles, theme);
 
+  const clip = clipId(props, valueText);
   const { labelW, valueW, total } = flatWidths(label, valueText, sealKind !== null);
   const textAttrs = `font-family="${MONO}" font-size="${FONT_SIZE}" letter-spacing="-0.2px"`;
 
@@ -75,8 +99,8 @@ export function flatBadge(props: BadgeProps): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${total}" height="${H}" viewBox="0 0 ${total} ${H}" role="img" aria-label="${escapeXml(title)}" style="display:block">` +
     `<title>${escapeXml(title)}</title>` +
     styleEl +
-    `<clipPath id="gcf"><rect width="${total}" height="${H}" rx="3"/></clipPath>` +
-    `<g clip-path="url(#gcf)">` +
+    `<clipPath id="${clip}"><rect width="${total}" height="${H}" rx="3"/></clipPath>` +
+    `<g clip-path="url(#${clip})">` +
     `<rect x="0" y="0" width="${labelW}" height="${H}" fill="${color['labelBg']}"/>` +
     `<text x="${PAD_X}" y="${TEXT_Y}" fill="${color['labelText']}" ${textAttrs}>${escapeXml(label)}</text>` +
     valueGroup +

@@ -19,6 +19,8 @@ declare global {
   namespace Cloudflare {
     interface Env extends WorkerEnv {
       TEST_MIGRATIONS: D1Migration[];
+      /** src/styles/app.css source text (vitest.config.ts) — theme-plumbing tests. */
+      TEST_APP_CSS: string;
     }
   }
 }

@@ -59,6 +59,15 @@ describe('LandingPage (unauth)', () => {
     expect(html).toContain('signed responses');
   });
 
+  it('keeps every inline badge clipPath id unique across the document', () => {
+    // The README card inlines four flat badges in ONE document — a shared id
+    // would make url(#…) resolve to the first badge's clip and truncate the rest.
+    const html = render(null);
+    const ids = [...html.matchAll(/<clipPath id="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('keeps the demo identity anonymized and escapes the placeholder host', () => {
     const html = render(null);
     expect(html).toContain('johndoe/client-platform');
@@ -109,6 +118,71 @@ describe('LandingPage copy rule (decision #5)', () => {
     const html = render(null);
     expect(html).toContain('https://github.com/supergithubo/gitcert');
     expect(html).toContain('fully open source');
+  });
+});
+
+describe('LandingPage accent discipline (mock authority)', () => {
+  it('renders both CTAs as ink buttons with paper text, never accent', () => {
+    for (const auth of [null, { attestedCount: 2 }] as const) {
+      const html = render(auth);
+      const cta = /<a data-nav="true" href="\/(?:auth\/login|dashboard)" class="([^"]+)"/.exec(
+        html,
+      );
+      expect(cta?.[1]).toContain('bg-ink');
+      expect(cta?.[1]).toContain('text-paper');
+      expect(cta?.[1]).not.toContain('accent');
+    }
+  });
+
+  it('styles trust-strip anchors with the muted reference treatment', () => {
+    const html = render(null);
+    const trustLinks = [
+      ...html.matchAll(/<a href="https:\/\/github\.com\/supergithubo\/gitcert" class="([^"]+)"/g),
+    ].map((m) => m[1]);
+    expect(trustLinks).toHaveLength(2);
+    for (const cls of trustLinks) {
+      expect(cls).toContain('text-soft');
+      expect(cls).toContain('underline');
+      expect(cls).toContain('hover:text-accent');
+    }
+  });
+
+  it('keeps the nav GitHub link muted (mock: color var(--muted))', () => {
+    const html = render(null);
+    const openTag = html.slice(
+      html.indexOf('data-nav="true" href="https://github.com/supergithubo/gitcert"'),
+    );
+    expect(openTag.slice(0, openTag.indexOf('>'))).toContain('text-muted');
+  });
+});
+
+describe('Layout theme toggle (restored from the mocks)', () => {
+  it('inlines the no-flash theme-init script in <head> before the stylesheet', () => {
+    const html = render(null);
+    const script = html.indexOf("localStorage.getItem('gc-theme')");
+    const stylesheet = html.indexOf('href="/styles.css"');
+    expect(script).toBeGreaterThan(-1);
+    expect(stylesheet).toBeGreaterThan(-1);
+    expect(script).toBeLessThan(stylesheet);
+  });
+
+  it('renders the toggle button with both mock glyphs, far right of the nav', () => {
+    const html = render(null);
+    expect(html).toContain('id="gc-theme-toggle"');
+    expect(html).toContain('aria-label="toggle theme"');
+    expect(html).toContain('data-theme-icon="sun"');
+    expect(html).toContain('data-theme-icon="moon"');
+    // Mock moon path, and the toggle sits after the GitHub link.
+    expect(html).toContain('M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z');
+    expect(html.indexOf('View on GitHub')).toBeLessThan(html.indexOf('gc-theme-toggle'));
+  });
+
+  it('wires the toggle to data-gc-theme on <html> with localStorage persistence', () => {
+    const html = render(null);
+    expect(html).toContain("setAttribute('data-gc-theme', next)");
+    expect(html).toContain("localStorage.setItem('gc-theme', next)");
+    // Respects prefers-color-scheme when no explicit theme is set.
+    expect(html).toContain("matchMedia('(prefers-color-scheme: dark)')");
   });
 });
 
