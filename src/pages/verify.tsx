@@ -88,7 +88,7 @@ export function VerifyPage(props: VerifyProps) {
   const sigShort = `${signature.slice(0, 4)}…${signature.slice(-4)}`;
   return (
     <CertFrame owner={owner} repo={repo} title={`${owner}/${repo} — GitCert attestation`}>
-      <div class="px-[44px] pt-[34px] pb-10">
+      <div class="px-5 pt-6 pb-7 sm:px-[44px] sm:pt-[34px] sm:pb-10">
         <div class="flex items-start justify-between">
           <CardBrand />
           <div class="text-right font-mono">
@@ -98,14 +98,14 @@ export function VerifyPage(props: VerifyProps) {
         </div>
         <div class="my-6 h-px bg-hair" />
 
-        <h1 class="mb-1 text-[27px] font-medium tracking-[-0.3px]">
+        <h1 class="mb-1 text-[21px] font-medium tracking-[-0.3px] sm:text-[27px]">
           Attestation of Repository Activity
         </h1>
         <div class="mb-[26px] font-mono text-[12px] text-muted">
           Independently read from GitHub.
         </div>
 
-        <div class="mb-[26px] grid grid-cols-[150px_1fr] gap-x-5 gap-y-[13px] font-mono text-[13.5px]">
+        <div class="mb-[26px] grid grid-cols-[104px_1fr] gap-x-[14px] gap-y-[11px] font-mono sm:grid-cols-[150px_1fr] sm:gap-x-5 sm:gap-y-[13px] text-[13.5px]">
           <div class="text-muted">repository</div>
           <div>
             {owner}/{repo}
@@ -118,7 +118,7 @@ export function VerifyPage(props: VerifyProps) {
 
         <div class="mb-5 h-px bg-hair2" />
 
-        <div class="mb-[26px] grid grid-cols-[150px_1fr] gap-x-5 gap-y-[13px] font-mono text-[14px]">
+        <div class="mb-[26px] grid grid-cols-[104px_1fr] gap-x-[14px] gap-y-[11px] font-mono sm:grid-cols-[150px_1fr] sm:gap-x-5 sm:gap-y-[13px] text-[14px]">
           <div class="text-muted">commits</div>
           <div>
             <span>{formatCount(stats.commits)}</span>
@@ -148,7 +148,7 @@ export function VerifyPage(props: VerifyProps) {
 
         <div class="mb-5 h-px bg-hair2" />
 
-        <div class="mb-2 grid grid-cols-[150px_1fr] gap-x-5 gap-y-[13px] font-mono text-[13.5px]">
+        <div class="mb-2 grid grid-cols-[104px_1fr] gap-x-[14px] gap-y-[11px] font-mono sm:grid-cols-[150px_1fr] sm:gap-x-5 sm:gap-y-[13px] text-[13.5px]">
           <div class="text-muted">attested</div>
           <div>{formatTimestampUtc(collectedAt)}</div>
           <div class="text-muted">method</div>
@@ -176,7 +176,7 @@ export function VerifyPage(props: VerifyProps) {
         </div>
       </div>
 
-      <div class="border-t border-hair bg-panel2 px-[44px] py-[22px] text-[13.5px] leading-[1.6] text-body">
+      <div class="border-t border-hair bg-panel2 px-5 py-5 text-[13.5px] leading-[1.6] text-body sm:px-[44px] sm:py-[22px]">
         <span class="mb-2 block font-mono text-[11px] tracking-[1.5px] text-muted uppercase">
           How this works
         </span>
@@ -217,10 +217,10 @@ export function VerifyCollectingPage(props: { owner: string; repo: string }) {
   });
   return (
     <CertFrame owner={owner} repo={repo} title={`${owner}/${repo} — GitCert attestation`}>
-      <div class="px-[44px] pt-[34px] pb-10">
+      <div class="px-5 pt-6 pb-7 sm:px-[44px] sm:pt-[34px] sm:pb-10">
         <CardBrand />
         <div class="my-6 h-px bg-hair" />
-        <div class="flex min-h-[280px] flex-col items-center justify-center pt-12 pb-14 text-center">
+        <div class="flex min-h-[280px] flex-col items-center justify-center pt-9 pb-11 text-center sm:pt-12 sm:pb-14">
           <div class="mb-[26px] inline-flex">{raw(collectingBadge)}</div>
           <div class="font-mono text-[14px] tracking-[-0.1px] text-soft">
             Attestation in progress — first collection running.
@@ -236,10 +236,10 @@ export function VerifyNotFoundPage(props: { owner: string; repo: string }) {
   const { owner, repo } = props;
   return (
     <CertFrame owner={owner} repo={repo} title="GitCert — no attestation found">
-      <div class="px-[44px] pt-[34px] pb-10">
+      <div class="px-5 pt-6 pb-7 sm:px-[44px] sm:pt-[34px] sm:pb-10">
         <CardBrand />
         <div class="my-6 h-px bg-hair" />
-        <div class="flex min-h-[280px] flex-col items-center justify-center pt-12 pb-14 text-center">
+        <div class="flex min-h-[280px] flex-col items-center justify-center pt-9 pb-11 text-center sm:pt-12 sm:pb-14">
           <svg width="44" height="44" viewBox="0 0 24 24" class="mb-6 block">
             <circle
               cx="12"
@@ -271,8 +271,8 @@ export function VerifyNotFoundPage(props: { owner: string; repo: string }) {
 function CertFrame(props: { owner: string; repo: string; title: string; children?: Child }) {
   return (
     <Layout title={props.title}>
-      <div class="mx-auto max-w-[680px] px-7 pt-[52px] pb-24">
-        <div class="mb-[18px] pl-[2px] font-mono text-[12px] text-muted">
+      <div class="mx-auto max-w-[680px] px-4 pt-8 pb-16 sm:px-7 sm:pt-[52px] sm:pb-24">
+        <div class="mb-[18px] pl-[2px] font-mono text-[11px] break-all text-muted sm:text-[12px]">
           gitcert.harborstack.app/verify/{props.owner}/{props.repo}
         </div>
         <div class="border border-hair-strong bg-card shadow-[0_1px_0_rgba(0,0,0,0.03)]">

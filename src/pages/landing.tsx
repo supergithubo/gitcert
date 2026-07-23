@@ -35,7 +35,7 @@ export function LandingPage(props: LandingPageProps) {
     <Layout title="GitCert — verified badges for private GitHub repositories">
       <Hero auth={props.auth} />
       <StepsStrip />
-      <div class="mx-auto max-w-[1000px] px-7 py-14">
+      <div class="mx-auto max-w-[1000px] px-5 py-10 sm:px-7 sm:py-14">
         <ReadmeCard />
         <InlineSiteCard />
       </div>
@@ -46,14 +46,14 @@ export function LandingPage(props: LandingPageProps) {
 
 function Hero(props: { auth: LandingPageProps['auth'] }) {
   return (
-    <div class="mx-auto max-w-[900px] px-7 pt-[78px] pb-12 text-center">
+    <div class="mx-auto max-w-[900px] px-5 pt-11 pb-9 text-center sm:px-7 sm:pt-[78px] sm:pb-12">
       <div class={`mb-[22px] ${EYEBROW_CLASS}`}>Verified repository stats</div>
-      <h1 class="mb-5 text-[52px] leading-[1.08] font-medium tracking-[-1px] text-balance">
+      <h1 class="mb-4 text-[30px] leading-[1.12] font-medium tracking-[-0.6px] text-balance sm:mb-5 sm:text-[52px] sm:leading-[1.08] sm:tracking-[-1px]">
         Your private work,
         <br />
         independently attested.
       </h1>
-      <p class="mx-auto mb-8 max-w-[560px] text-[18px] leading-[1.55] text-body text-pretty">
+      <p class="mx-auto mb-7 max-w-[560px] text-[15.5px] leading-[1.55] text-body text-pretty sm:mb-8 sm:text-[18px]">
         Badges for repos nobody else can see — and public ones too. GitCert reads your real stats
         from GitHub, signs them, and serves badges that recruiters and clients can verify.
       </p>
@@ -132,7 +132,7 @@ const STEPS: readonly { num: string; title: string; body: string }[] = [
 function StepsStrip() {
   return (
     <div class="border-t border-b border-hair bg-panel">
-      <div class="mx-auto grid max-w-[1000px] grid-cols-3 gap-9 px-7 py-11">
+      <div class="mx-auto grid max-w-[1000px] grid-cols-1 gap-[26px] px-5 py-[34px] md:grid-cols-3 md:gap-9 md:px-7 md:py-11">
         {STEPS.map((step) => (
           <div>
             <div class="font-mono text-[12px] text-accent">{step.num}</div>
@@ -150,7 +150,9 @@ function ReadmeCard() {
     <>
       <div class={`mb-[18px] ${EYEBROW_CLASS}`}>In your README — public or private</div>
       <BrowserCard filename="README.md">
-        <h2 class="mb-1 font-mono text-[24px] font-semibold tracking-[-0.4px]">client-platform</h2>
+        <h2 class="mb-1 font-mono text-[20px] font-semibold tracking-[-0.4px] sm:text-[24px]">
+          client-platform
+        </h2>
         <p class="mb-4 text-[14.5px] leading-[1.5] text-body">
           Internal platform services. Private repository.
         </p>
@@ -174,22 +176,28 @@ function InlineSiteCard() {
     <>
       <div class={`mt-11 mb-4 ${EYEBROW_CLASS}`}>…and inline on your site</div>
       <BrowserCard filename="<yoursite>.io">
-        <h2 class="mb-1 font-mono text-[24px] font-semibold tracking-[-0.4px]">John Doe</h2>
+        <h2 class="mb-1 font-mono text-[20px] font-semibold tracking-[-0.4px] sm:text-[24px]">
+          John Doe
+        </h2>
         <p class="mb-5 text-[14.5px] leading-[1.5] text-body">
           Platform engineer. Building internal services in the open.
         </p>
-        <div class="grid grid-cols-[150px_1fr] items-center gap-x-6 gap-y-[14px] text-[15px]">
-          <div class="text-soft">repository</div>
-          <div class="flex flex-wrap items-center gap-[10px]">
-            GitHub <span class="text-muted">(Private)</span>
+        <div class="flex flex-col text-[14px] sm:grid sm:grid-cols-[150px_1fr] sm:items-center sm:gap-x-6 sm:gap-y-[14px] sm:text-[15px]">
+          <div class="mb-[7px] text-[12px] text-soft sm:mb-0 sm:text-[15px]">repository</div>
+          <div class="flex flex-wrap items-center gap-[7px] sm:gap-[10px]">
+            <span class="mb-[2px] flex basis-full items-center gap-[7px] sm:mb-0 sm:inline-flex sm:basis-auto sm:gap-[10px]">
+              GitHub <span class="text-muted">(Private)</span>
+            </span>
             {INLINE_PILLS.map((svg, i) => (
-              <span class={i === 0 ? 'ml-auto inline-flex' : 'inline-flex'}>{raw(svg)}</span>
+              <span class={i === 0 ? 'sm:ml-auto inline-flex' : 'inline-flex'}>{raw(svg)}</span>
             ))}
           </div>
-          <div class="text-soft">documentation</div>
-          <div class="flex items-center gap-[10px]">
+          <div class="mt-[18px] mb-[7px] text-[12px] text-soft sm:mt-0 sm:mb-0 sm:text-[15px]">
+            documentation
+          </div>
+          <div class="flex flex-wrap items-center gap-[7px] sm:gap-[10px]">
             API Docs
-            <span class="ml-auto font-mono text-[13px] text-muted">{'<yoursite>.io/api'} ↗</span>
+            <span class="font-mono text-[13px] text-muted sm:ml-auto">{'<yoursite>.io/api'} ↗</span>
           </div>
         </div>
       </BrowserCard>
@@ -207,7 +215,7 @@ function BrowserCard(props: { filename: string; children?: Child }) {
         <span class="h-[11px] w-[11px] rounded-full bg-dot" />
         <span class="ml-2 font-mono text-[11px] text-muted">{props.filename}</span>
       </div>
-      <div class="px-8 py-7">{props.children}</div>
+      <div class="px-5 py-[22px] sm:px-8 sm:py-7">{props.children}</div>
     </div>
   );
 }
@@ -226,7 +234,7 @@ const TRUST_LINK_CLASS = 'text-soft underline underline-offset-2 hover:text-acce
 function TrustStrip() {
   return (
     <div class="border-t border-hair bg-panel">
-      <div class="mx-auto grid max-w-[1000px] grid-cols-3 gap-8 px-7 py-10">
+      <div class="mx-auto grid max-w-[1000px] grid-cols-1 gap-6 px-5 py-[34px] md:grid-cols-3 md:gap-8 md:px-7 md:py-10">
         <TrustItem icon={LOCK_ICON} heading="read-only permissions">
           GitCert holds{' '}
           <a href={GITHUB_REPO_URL} class={TRUST_LINK_CLASS}>

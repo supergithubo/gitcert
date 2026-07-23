@@ -186,6 +186,44 @@ describe('Layout theme toggle (restored from the mocks)', () => {
   });
 });
 
+describe('LandingPage responsive breakpoints (mobile spec)', () => {
+  it('stacks the steps and trust strips at base and restores 3 columns at md', () => {
+    const html = render(null);
+    expect(count(html, 'md:grid-cols-3')).toBe(2);
+    expect(count(html, 'grid-cols-1')).toBe(2);
+  });
+
+  it('keeps the wrap affordance on the hero-pill and README flat-badge rows', () => {
+    const html = render(null);
+    // Hero pills wrap (spec: wrap — not scroll, not subset).
+    expect(html).toContain('flex flex-wrap justify-center gap-[10px]');
+    // README flat badges wrap; the fixed widths that remain are the badge SVGs.
+    expect(html).toContain('flex flex-wrap gap-[7px]');
+  });
+
+  it('serves the inline-site card from one DOM: stacked base, grid from sm', () => {
+    const html = render(null);
+    expect(html).toContain('sm:grid-cols-[150px_1fr]');
+    // The "GitHub (Private)" text takes the full row on mobile so the pills
+    // drop to their own wrapped row; first pill right-aligns only from sm.
+    expect(html).toContain('basis-full');
+    expect(html).toContain('sm:basis-auto');
+    expect(html).toContain('sm:ml-auto');
+  });
+});
+
+describe('Layout responsive shell (mobile spec)', () => {
+  it('pins the viewport meta tag', () => {
+    const html = render(null);
+    expect(html).toContain('name="viewport" content="width=device-width, initial-scale=1"');
+  });
+
+  it('hides the GitHub nav label below sm while the icon stays', () => {
+    const html = render(null);
+    expect(html).toContain('<span class="hidden sm:inline">View on GitHub</span>');
+  });
+});
+
 describe('LandingPage brand', () => {
   it('uses the GitCert brand case and the page title', () => {
     const html = render(null);

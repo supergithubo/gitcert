@@ -77,7 +77,7 @@ export function Layout(props: { title: string; children?: Child }) {
 function Nav() {
   return (
     <div class="sticky top-0 z-20 border-b border-hair bg-nav backdrop-blur-[6px]">
-      <div class="mx-auto flex h-[58px] max-w-[1120px] items-center justify-between px-7">
+      <div class="mx-auto flex h-14 max-w-[1120px] items-center justify-between px-4 sm:h-[58px] sm:px-7">
         <div class="flex items-center gap-[9px]">
           {raw(sealSvg({ size: 19, kind: 'check', color: 'var(--accent)' }))}
           <span class="font-mono text-[16px] font-semibold tracking-[-0.4px]">GitCert</span>
@@ -93,7 +93,7 @@ function Nav() {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" class="block">
               <path d={GITHUB_MARK_PATH} />
             </svg>
-            View on GitHub
+            <span class="hidden sm:inline">View on GitHub</span>
           </a>
           <ThemeToggle />
         </div>

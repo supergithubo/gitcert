@@ -33,6 +33,10 @@ function render(node: unknown): string {
   return String(node);
 }
 
+function count(html: string, needle: string): number {
+  return html.split(needle).length - 1;
+}
+
 describe('DashboardPage — header and repo list', () => {
   it('renders the eyebrow, h1, and shell', () => {
     const html = render(DashboardPage(fixtureProps()));
@@ -135,14 +139,21 @@ describe('DashboardPage — badge builder', () => {
     expect(html).toContain('src="/b/wnston/client-platform/commits.svg?style=flat&amp;theme=auto"');
   });
 
-  it('renders three copy buttons', () => {
+  it('renders three copy buttons with static per-breakpoint label spans', () => {
     const html = render(DashboardPage(fixtureProps()));
     expect(html).toContain('data-copy="md"');
     expect(html).toContain('data-copy="html"');
     expect(html).toContain('data-copy="react"');
-    expect(html).toContain('copy markdown');
-    expect(html).toContain('copy html');
-    expect(html).toContain('copy react');
+    // Two static label spans per button (6 total) — CSS picks the wording.
+    expect(count(html, 'data-copy-idle')).toBe(3);
+    expect(count(html, 'data-copy-copied')).toBe(3);
+    expect(html).toContain('<span class="hidden sm:inline">copy </span>markdown');
+    expect(html).toContain('<span class="hidden sm:inline">copy </span>html');
+    expect(html).toContain('<span class="hidden sm:inline">copy </span>react');
+    expect(count(html, '<span class="hidden sm:inline">copied </span>✓')).toBe(3);
+    // The old single-span shape (script-swapped textContent) is gone.
+    expect(html).not.toContain('data-copy-label');
+    expect(html).not.toContain('>copy markdown<');
   });
 });
 
@@ -175,6 +186,19 @@ describe('DashboardPage — state block and inline script', () => {
     expect(html).toContain('navigator.clipboard');
   });
 
+  it('drives copied wording via the data-copied attribute only (sanctioned deviation)', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    // On copy: set the attribute; on reset: remove it — no textContent writes.
+    expect(html).toContain("btn.setAttribute('data-copied', '')");
+    expect(html).toContain("b.removeAttribute('data-copied')");
+    expect(html).toContain('setTimeout(resetCopyButtons, 1600)');
+    expect(html).not.toContain('data-label-default');
+    expect(html).not.toContain("textContent = 'copied");
+    // Pure-CSS responsiveness: the script never reads the viewport.
+    expect(html).not.toContain('innerWidth');
+    expect(html).not.toContain("matchMedia('(max-width");
+  });
+
   it('never interpolates user data into the script (placeholder substitution only)', () => {
     const html = render(DashboardPage(fixtureProps({ login: 'evil"login' })));
     const scriptStart = html.indexOf('(function () {');
@@ -188,6 +212,29 @@ describe('DashboardPage — state block and inline script', () => {
     const html = render(DashboardPage(fixtureProps({ repos, login: '<img src=x>' })));
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).not.toContain('<img src=x>');
+  });
+});
+
+describe('DashboardPage responsive breakpoints (mobile spec)', () => {
+  it('stacks the two panes at base and restores the [400px_1fr] split at lg', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    expect(html).toContain('grid-cols-1');
+    expect(html).toContain('lg:grid-cols-[400px_1fr]');
+    // Repo panel border swaps from bottom (stacked) to right (split).
+    expect(html).toContain('lg:border-r');
+    expect(html).toContain('lg:border-b-0');
+  });
+
+  it('shortens the repo scroll region at base and restores it at lg', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    expect(html).toContain('max-h-[196px]');
+    expect(html).toContain('lg:max-h-[460px]');
+  });
+
+  it('keeps the snippet pre horizontally scrollable (overflow guard)', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    const preTag = html.slice(html.indexOf('id="gc-snippet"'), html.indexOf('</pre>'));
+    expect(preTag).toContain('overflow-x-auto');
   });
 });
 

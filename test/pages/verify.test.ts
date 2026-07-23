@@ -120,6 +120,21 @@ describe('VerifyPage', () => {
   });
 });
 
+describe('VerifyPage responsive breakpoints (mobile spec)', () => {
+  it('narrows all three stat grids at base and restores desktop columns at sm', () => {
+    const html = render(VerifyPage(fixtureProps()));
+    expect(html.match(/grid-cols-\[104px_1fr\]/g)).toHaveLength(3);
+    expect(html.match(/sm:grid-cols-\[150px_1fr\]/g)).toHaveLength(3);
+  });
+
+  it('lets the request-URL caption break on narrow screens', () => {
+    const html = render(VerifyPage(fixtureProps()));
+    const captionStart = html.indexOf('gitcert.harborstack.app/verify/');
+    const captionTag = html.slice(html.lastIndexOf('<div', captionStart), captionStart);
+    expect(captionTag).toContain('break-all');
+  });
+});
+
 describe('VerifyCollectingPage', () => {
   it('renders the collecting badge and progress copy', () => {
     const html = render(VerifyCollectingPage({ owner: 'wnston', repo: 'some-repo' }));

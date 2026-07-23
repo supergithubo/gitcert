@@ -62,7 +62,7 @@ const SEG_BTN_CLASS = 'cursor-pointer border-none px-4 py-[7px] font-mono text-[
 const SEG_ACTIVE = 'bg-ink text-paper';
 const SEG_INACTIVE = 'bg-field text-soft';
 const COPY_BTN_CLASS =
-  'inline-flex items-center gap-[7px] rounded-[2px] border border-hair-strong bg-card px-[15px] py-2 font-mono text-[12.5px] text-ink';
+  'group inline-flex flex-1 min-w-0 items-center justify-center gap-[7px] rounded-[2px] border border-hair-strong bg-card px-2 py-2 font-mono text-[12.5px] text-ink sm:flex-none sm:justify-start sm:px-[15px]';
 
 /**
  * Builder behavior — constant string, no user-data interpolation. State
@@ -91,10 +91,6 @@ const DASHBOARD_SCRIPT = `(function () {
   var current = { repo: repos[0], style: 'flat', shown: 'md', buster: 0 };
   var copyTimer = null;
   var refreshTimer = null;
-
-  copyBtns.forEach(function (b) {
-    b.setAttribute('data-label-default', b.querySelector('[data-copy-label]').textContent);
-  });
 
   function fill(template, v) {
     return template.replace(/\\{(OWNER|REPO|METRIC|LABEL|STYLE|THEME)\\}/g, function (m, k) {
@@ -166,7 +162,7 @@ const DASHBOARD_SCRIPT = `(function () {
 
   function resetCopyButtons() {
     copyBtns.forEach(function (b) {
-      b.querySelector('[data-copy-label]').textContent = b.getAttribute('data-label-default');
+      b.removeAttribute('data-copied');
       b.classList.remove('border-accent', 'bg-panel', 'text-accent');
     });
   }
@@ -207,7 +203,7 @@ const DASHBOARD_SCRIPT = `(function () {
       } catch (e) {}
       render();
       resetCopyButtons();
-      btn.querySelector('[data-copy-label]').textContent = 'copied \\u2713';
+      btn.setAttribute('data-copied', '');
       btn.classList.add('border-accent', 'bg-panel', 'text-accent');
       clearTimeout(copyTimer);
       copyTimer = setTimeout(resetCopyButtons, 1600);
@@ -276,11 +272,11 @@ export function DashboardPage(props: DashboardPageProps) {
   const { login, repos, lastSyncAt } = props;
   return (
     <Layout title="GitCert — dashboard">
-      <div class="mx-auto max-w-[1120px] px-7 pt-[52px] pb-24">
+      <div class="mx-auto max-w-[1120px] px-4 pt-8 pb-16 sm:px-7 sm:pt-[52px] sm:pb-24">
         <div class="font-mono text-[11px] tracking-[2px] text-muted uppercase">
           Dashboard · @{login}
         </div>
-        <h1 class="mt-[10px] mb-[30px] text-[30px] font-medium tracking-[-0.4px]">
+        <h1 class="mt-[10px] mb-6 text-[24px] font-medium tracking-[-0.4px] sm:mb-[30px] sm:text-[30px]">
           Attest a repo, get a badge
         </h1>
         {repos[0] === undefined ? (
@@ -319,7 +315,7 @@ function DashboardCard(props: {
   };
   const stateJson = JSON.stringify(state).replace(/</g, '\\u003c');
   return (
-    <div class="grid grid-cols-[400px_1fr] border border-hair-strong bg-card">
+    <div class="grid grid-cols-1 border border-hair-strong bg-card lg:grid-cols-[400px_1fr]">
       <RepoPanel repos={repos} selected={selected} lastSyncAt={lastSyncAt} />
       <BuilderPanel selected={selected} />
       <script type="application/json" id="gc-state">
@@ -337,9 +333,12 @@ function RepoPanel(props: {
 }) {
   const { repos, selected, lastSyncAt } = props;
   return (
-    <div class="border-r border-hair p-6">
+    <div class="border-b border-hair p-5 lg:border-r lg:border-b-0 lg:p-6">
       <div class={`${PANEL_HEADING_CLASS} mb-4`}>My repos</div>
-      <div data-repo-scroll class="-mx-1 max-h-[460px] overflow-x-hidden overflow-y-auto px-1">
+      <div
+        data-repo-scroll
+        class="-mx-1 max-h-[196px] overflow-x-hidden overflow-y-auto px-1 lg:max-h-[460px]"
+      >
         {repos.map((r) => (
           <RepoRow repo={r} selected={r === selected} />
         ))}
@@ -402,7 +401,7 @@ function BuilderPanel(props: { selected: DashboardRepo }) {
   const previewSrc = fillSnippetTemplate(BADGE_PATH_TEMPLATE, initial);
   const snippets = buildSnippets(initial);
   return (
-    <div class="px-7 py-6">
+    <div class="p-5 sm:px-7 sm:py-6">
       <div class={`${PANEL_HEADING_CLASS} mb-5`}>Badge builder</div>
 
       <div class="grid max-w-[420px] grid-cols-[70px_1fr] items-center gap-x-4 gap-y-[18px]">
@@ -465,10 +464,10 @@ function BuilderPanel(props: { selected: DashboardRepo }) {
         </span>
       </div>
 
-      <div class="mt-6 flex flex-wrap gap-[9px]">
-        <CopyButton kind="md" label="copy markdown" enabled={enabled} />
-        <CopyButton kind="html" label="copy html" enabled={enabled} />
-        <CopyButton kind="react" label="copy react" enabled={enabled} />
+      <div class="mt-6 flex gap-[7px] sm:flex-wrap sm:gap-[9px]">
+        <CopyButton kind="md" label="markdown" enabled={enabled} />
+        <CopyButton kind="html" label="html" enabled={enabled} />
+        <CopyButton kind="react" label="react" enabled={enabled} />
       </div>
       <pre
         id="gc-snippet"
@@ -480,6 +479,14 @@ function BuilderPanel(props: { selected: DashboardRepo }) {
   );
 }
 
+/**
+ * Copy-trigger button. Wording per breakpoint is static markup (mock:
+ * `markdown` / `✓` on mobile, `copy markdown` / `copied ✓` from `sm:`) —
+ * the script only toggles the button's `data-copied` attribute; CSS
+ * (`group-data-copied:` variants) swaps the idle/copied spans. This is the
+ * sanctioned DASHBOARD_SCRIPT deviation from the spec: no viewport logic
+ * ever enters JS.
+ */
 function CopyButton(props: { kind: 'md' | 'html' | 'react'; label: string; enabled: boolean }) {
   const { kind, label, enabled } = props;
   return (
@@ -489,7 +496,13 @@ function CopyButton(props: { kind: 'md' | 'html' | 'react'; label: string; enabl
       class={`${COPY_BTN_CLASS} ${enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-45'}`}
     >
       <CopyIcon />
-      <span data-copy-label>{label}</span>
+      <span data-copy-idle class="group-data-copied:hidden">
+        <span class="hidden sm:inline">copy </span>
+        {label}
+      </span>
+      <span data-copy-copied class="hidden group-data-copied:inline">
+        <span class="hidden sm:inline">copied </span>✓
+      </span>
     </button>
   );
 }

@@ -43,9 +43,9 @@ export function SignedOutPage() {
 function AuthFrame(props: { title: string; children?: Child }) {
   return (
     <Layout title={props.title}>
-      <div class="mx-auto max-w-[680px] px-7 pt-[52px] pb-24">
+      <div class="mx-auto max-w-[680px] px-4 pt-8 pb-16 sm:px-7 sm:pt-[52px] sm:pb-24">
         <div class="border border-hair-strong bg-card shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-          <div class="px-[44px] pt-[34px] pb-10">
+          <div class="px-5 pt-6 pb-7 sm:px-[44px] sm:pt-[34px] sm:pb-10">
             <div class="flex items-center gap-[10px]">
               {raw(sealSvg({ size: 26, kind: 'check', color: 'var(--accent)' }))}
               <span class="font-mono text-[19px] font-semibold tracking-[-0.4px]">GitCert</span>
