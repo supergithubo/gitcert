@@ -16,4 +16,10 @@ export interface Env {
   GITHUB_WEBHOOK_SECRET: string;
   /** Ed25519 signing seed, base64 raw 32 bytes — signs attestation payloads. */
   SIGNING_KEY: string;
+  /** GitHub App OAuth client id — public, used to build the `/auth/login` authorize URL. */
+  GITHUB_CLIENT_ID: string;
+  /** GitHub App OAuth client secret — exchanged for a one-time user token at `/auth/callback`, never stored. */
+  GITHUB_CLIENT_SECRET: string;
+  /** HMAC signing secret for the `gc_session` owner-session cookie (SPEC.md §M3 — stateless, no session store). */
+  SESSION_SECRET: string;
 }

@@ -288,4 +288,42 @@ describe('runCollector', () => {
       .first();
     expect(row).toBeNull();
   });
+
+  it('guards a targeted collect of a suspended installation: no token mint, no GitHub fetch (permission boundary)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 8,
+      accountLogin: 'suspended-targeted',
+      accountId: 800,
+      accountType: 'User',
+    });
+    await upsertRepos(env.DB, 8, [
+      { id: 80, owner: 'suspended-targeted', name: 'repo-e', private: true },
+    ]);
+    await env.DB.prepare('UPDATE installations SET suspended_at = ?2 WHERE id = ?1')
+      .bind(8, '2026-07-22T00:00:00Z')
+      .run();
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await runCollector(env, { installationId: 8, now: () => new Date('2026-07-22T12:00:00Z') });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const row = await env.DB.prepare('SELECT repo_id FROM stats WHERE repo_id = ?1')
+      .bind(80)
+      .first();
+    expect(row).toBeNull();
+  });
+
+  it('guards a targeted collect of an unknown installation: no token mint, no GitHub fetch (edge case)', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await runCollector(env, {
+      installationId: 999999,
+      now: () => new Date('2026-07-22T12:00:00Z'),
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

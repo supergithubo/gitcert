@@ -4,10 +4,13 @@ Routes exposed by the gitcert Worker. Updated whenever a route, field, or
 request/response schema is added, changed, or removed (see
 `rules/standards/documentation.md`).
 
-M1 shipped the GitHub App webhook receiver. M2 adds the public read
-surfaces below — badge SVGs, signed JSON, the verify certificate, the
-public key endpoint, and the health probe. `/`, `/dashboard`, and the
-shadcn registry (`/r/*`) still land in later milestones per `SPEC.md` §12.
+M1 shipped the GitHub App webhook receiver. M2 added the public read
+surfaces — badge SVGs, signed JSON, the verify certificate, the public
+key endpoint, and the health probe. M3 adds the owner surfaces below —
+OAuth login/session, the dashboard, and the owner mutations
+(`/repos/:id/settings`, `/repos/:id/refresh`). The landing page `/` and
+the shadcn registry (`/r/*`) still land in later milestones per
+`SPEC.md` §12.
 
 Every route below is a `GET`. No handler calls GitHub in the request
 path — each is one D1 read (`selectPublicRepoState` / `selectOldestCollectedAt`)
@@ -167,3 +170,142 @@ for direct client use.
   on `installation created`, also enqueues an immediate collector run for
   that installation via `executionCtx.waitUntil` (fire-and-forget — the
   response does not wait on it).
+
+## Owner routes (M3)
+
+Session-authenticated surfaces for the repo owner: sign-in, the
+dashboard, and the two owner mutations. Every route below always sends
+`Cache-Control: no-store`, is never served through `caches.default`
+(`edgeCache`), and sends no CORS header — the opposite policy from the
+public surfaces above. JSON errors use a consistent `{ "error": "<code>" }`
+shape.
+
+**Tenancy:** the tenant is the GitHub App installation; ownership maps
+session → the numeric GitHub user id (`account_id`) → its live
+(non-suspended) installations (rename-safe — a login change never breaks
+ownership). Every owner query/mutation is scoped through that join.
+**Unknown, not-owned, and removed resources are always a `404`, never a
+`403`** — a `403` would let an authenticated caller enumerate which repo
+ids are registered in gitcert, an existence oracle for private repos
+(CRITICAL invariant).
+
+**Session cookie** (`gc_session`): `base64url(payloadJson) + "." +
+base64url(HMAC-SHA256(SESSION_SECRET, base64url(payloadJson)))`, payload
+`{ "github_id": number, "login": string, "exp": number }` (unix seconds,
+issued for 7 days). Attributes: `HttpOnly; Secure; SameSite=Lax; Path=/;
+Max-Age=604800`. Verification is structural parse → timing-safe MAC
+compare → `exp` check; any failure (tampered payload, wrong MAC, expired)
+is treated as a plain signed-out request — never a 500, never a detail
+leaked. Sessions are stateless: there is no server-side session store or
+revocation list, so signing out is just clearing the cookie.
+
+### `GET /auth/login`
+
+Starts the GitHub App OAuth user flow (identity only — no scopes,
+no stored token).
+
+- Generates a 32-byte random state nonce (base64url) and sets it as
+  `gc_oauth_state` (`HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`).
+- `302` to `https://github.com/login/oauth/authorize?client_id=<GITHUB_CLIENT_ID>&state=<nonce>`.
+  No `scope` param (identity only), no `redirect_uri` (GitHub uses the
+  App's registered callback).
+
+### `GET /auth/callback`
+
+- **(1)** GitHub's `error` param present → `400` error page (see below).
+- **(2)** `state` query param must timing-safe-match the `gc_oauth_state`
+  cookie → missing/mismatch is a `400` error page with the state cookie
+  cleared.
+- **(3)** Exchanges `code` at `https://github.com/login/oauth/access_token`
+  (`POST`, `Accept: application/json`) → failure is a `400` error page.
+- **(4)** `GET https://api.github.com/user` with the exchanged token →
+  `{ id, login }` → failure is a `400` error page. **The token is used for
+  this one request and discarded — never stored, never logged**
+  (attestation invariant).
+- **(5)** Sets the `gc_session` cookie for `{ github_id: id, login }`,
+  clears `gc_oauth_state`.
+- **(6)** If `installation_id` + `setup_action` query params are present
+  (GitHub's "Request user authorization on install" redirect shape):
+  D1-verifies `installation_id` is owned by this session and live, and —
+  only if its repos' stats are missing or older than 5 minutes — kicks a
+  targeted `runCollector({ installationId })` via `waitUntil`. An
+  unowned/unknown/suspended `installation_id` (including the race where a
+  webhook's insert hasn't landed yet) is a silent no-op — `installation_id`
+  is never trusted for anything beyond this D1-verified lookup.
+- **(7)** `302` to `/dashboard`.
+- Every failure branch above: `400`, a generic error page (no internals
+  leaked), `gc_oauth_state` cleared, `Cache-Control: no-store`.
+
+### `POST /auth/logout`
+
+- No session required (idempotent). Clears `gc_session` (`Max-Age=0`).
+- `200`, a minimal signed-out confirmation page. No nav links to this
+  route exist yet (binding design mock has none) — it's reachable only by
+  direct request.
+
+### `GET /dashboard`
+
+- **No/invalid/expired session:** clears `gc_session`, `302` to
+  `/auth/login`.
+- **Valid session:** one D1 read (`selectOwnedRepos`, scoped to the
+  session's `github_id`) → the dashboard page. `200`, HTML. Lists every
+  non-removed repo of every live installation this session owns, sorted
+  `(owner, name)`; excluded (`included = 0`) repos are still listed
+  (greyed, still selectable — re-enabling is only possible if they stay
+  visible). `lastSyncAt` is `MAX(stats.collected_at)` across those repos
+  (`null` if nothing has been collected yet). **No GitHub call in this
+  path** (edge-cache/attestation invariant — dashboard reads are D1-only).
+
+### `GET /setup`
+
+The GitHub App's Setup URL — receives direct/update install arrivals
+(as opposed to `/auth/callback`, which receives the post-install redirect
+when "Request user authorization on install" is enabled; both converge on
+the same D1-verified kick logic).
+
+- **No session:** `302` to `/auth/login`.
+- **With session:** if an `installation_id` query param is present, same
+  D1-verified ownership + freshness check and conditional collector kick
+  as `/auth/callback` step (6) above. `302` to `/dashboard`. **Never
+  errors user-visibly** — an unowned/unknown/suspended `installation_id`
+  just skips the kick silently.
+
+### `POST /repos/:id/settings`
+
+Toggles whether a repo is publicly exposed (`included`).
+
+- **Auth:** session required — `401 { "error": "unauthorized" }` without one.
+- **Request:** `Content-Type: application/json`, body must be exactly
+  `{ "included": boolean }`.
+  - Malformed JSON → `400 { "error": "malformed_json" }`.
+  - Valid JSON but wrong shape (extra fields, missing field, non-boolean
+    `included`) → `422 { "error": "invalid_body" }`.
+- **Mutation:** a single tenant-scoped `UPDATE` — `included` is only ever
+  set when `:id` resolves to a non-removed repo whose installation is
+  owned by the session and not suspended. Zero rows changed (unknown,
+  not-owned, or removed — one indistinguishable bucket) →
+  `404 { "error": "not_found" }`.
+- **Success:** `200 { "ok": true, "included": <bool> }`. After responding,
+  best-effort purges the repo's canonical badge URL cache entries via
+  `waitUntil` (8 metrics × {flat,pill} × {light,dark,auto}, plus the
+  bare-default URL per metric) so the dashboard's live preview reflects
+  the change immediately instead of waiting out the badge TTL.
+
+### `POST /repos/:id/refresh`
+
+Triggers an on-demand collector run for the repo's whole installation
+(collection granularity is per-installation, not per-repo — one token
+mint covers every repo GitHub returned for that installation).
+
+- **Auth:** session required — `401 { "error": "unauthorized" }` without one.
+- **Ownership:** `:id` resolved through the same owned/live join as
+  `/repos/:id/settings`. Not owned/unknown/removed/suspended-installation
+  → `404 { "error": "not_found" }` — never a `403`, and no GitHub call is
+  made on this path.
+- **Rate limit:** if the target repo's `stats.collected_at` is within 5
+  minutes → `429 { "error": "rate_limited" }`, no GitHub call.
+- **Success:** `202 { "ok": true }` immediately; `waitUntil`s
+  `runCollector({ installationId })` followed by the same badge-cache
+  purge as the settings route. `202`/`429` intentionally extend the
+  standard REST status table — the semantically correct codes for
+  "accepted, work continues asynchronously" and "rate limited".

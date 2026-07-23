@@ -4,6 +4,8 @@ import { webhooks } from './routes/webhooks';
 import { badge } from './routes/badge';
 import { api } from './routes/api';
 import { verify } from './routes/verify';
+import { auth } from './routes/auth';
+import { dashboard } from './routes/dashboard';
 import { runCollector } from './collector/run';
 
 /**
@@ -16,6 +18,8 @@ app.route('/', webhooks);
 app.route('/', badge);
 app.route('/', api);
 app.route('/', verify);
+app.route('/', auth);
+app.route('/', dashboard);
 
 export default {
   fetch: app.fetch,

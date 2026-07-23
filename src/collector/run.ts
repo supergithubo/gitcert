@@ -1,5 +1,6 @@
 import type { Env } from '../env';
 import {
+  selectInstallation,
   selectReposForInstallation,
   selectStaleInstallations,
   upsertStatsBatch,
@@ -63,6 +64,18 @@ async function collectInstallation(
   installationId: number,
   now: () => Date,
 ): Promise<void> {
+  // Liveness guard (spec overview Decision 8): never mint a token for an
+  // unknown or suspended installation. Applies to both the cron stale scan
+  // and a targeted `{ installationId }` call (webhook first-collect, manual
+  // refresh) — both paths funnel through this one function.
+  const installation = await selectInstallation(env.DB, installationId);
+  if (!installation || installation.suspendedAt !== null) {
+    console.error(
+      `gitcert collector: skipping installation ${installationId} (unknown or suspended)`,
+    );
+    return;
+  }
+
   const tokenResult = await mintInstallationToken(
     env.GITHUB_APP_ID,
     env.GITHUB_APP_PRIVATE_KEY,

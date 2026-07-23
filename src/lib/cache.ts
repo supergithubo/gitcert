@@ -4,6 +4,8 @@
  * `/healthz` deliberately never imports `edgeCache` (SPEC.md §5, `no-store`).
  */
 
+import type { BadgeStyle, BadgeTheme, Metric } from '../badges/types';
+
 /** CORS header every public GET sends, including on error responses (SPEC.md §5). */
 export const CORS_ALLOW_ALL: Record<string, string> = { 'Access-Control-Allow-Origin': '*' };
 
@@ -108,4 +110,67 @@ export async function edgeCache(
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
   }
   return response;
+}
+
+/** Canonical production origin — matches `wrangler.toml`'s route pattern and `routes/api.ts`'s `PUBLIC_KEY_URL`. */
+const CANONICAL_ORIGIN = 'https://gitcert.harborstack.app';
+
+const ALL_METRICS: readonly Metric[] = [
+  'commits',
+  'last-commit',
+  'issues',
+  'open-prs',
+  'language',
+  'created',
+  'first-commit',
+  'size',
+];
+const ALL_STYLES: readonly BadgeStyle[] = ['flat', 'pill'];
+const ALL_THEMES: readonly BadgeTheme[] = ['light', 'dark', 'auto'];
+
+/** Identity gitcert needs to purge a repo's badge cache entries. */
+export interface RepoRef {
+  owner: string;
+  name: string;
+}
+
+function buildBadgeUrlVariants(repoRef: RepoRef): string[] {
+  const base = `${CANONICAL_ORIGIN}/b/${repoRef.owner}/${repoRef.name}`;
+  const urls: string[] = [];
+  for (const metric of ALL_METRICS) {
+    // Bare-default URL (no query string) — a distinct cache key from the
+    // explicit-default-params URL below, since `edgeCache` keys on the
+    // full request URL.
+    urls.push(`${base}/${metric}.svg`);
+    for (const style of ALL_STYLES) {
+      for (const theme of ALL_THEMES) {
+        urls.push(`${base}/${metric}.svg?style=${style}&theme=${theme}`);
+      }
+    }
+  }
+  return urls;
+}
+
+/**
+ * Best-effort purge of a repo's canonical badge URL variants from
+ * `caches.default` (spec overview Decision 11): 8 metrics × {flat,pill} ×
+ * {light,dark,auto} explicit-param URLs, plus one bare-default URL per
+ * metric. Called (via `waitUntil`) after a refresh collect completes and
+ * after a settings toggle. A per-URL delete failure is swallowed — a
+ * purge miss just means that one variant converges on its own via TTL,
+ * and a purge must never fail the calling owner-route mutation.
+ * Label-override/cache-buster variants are intentionally not enumerated
+ * here — they converge by TTL (spec overview §Badge cache purge).
+ */
+export async function purgeBadgeUrls(repoRef: RepoRef): Promise<void> {
+  const cache = caches.default;
+  await Promise.all(
+    buildBadgeUrlVariants(repoRef).map(async (url) => {
+      try {
+        await cache.delete(url);
+      } catch {
+        // best-effort — see doc comment above.
+      }
+    }),
+  );
 }

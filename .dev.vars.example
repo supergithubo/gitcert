@@ -12,3 +12,14 @@ GITHUB_WEBHOOK_SECRET=""
 # Ed25519 signing seed, base64 raw 32 bytes — signs the canonical
 # attestation payload_json.
 SIGNING_KEY=""
+
+# M3 (multi-tenant owner surfaces):
+
+# GitHub App OAuth client secret — exchanged once for the user's identity at
+# GET /auth/callback, then discarded. Never stored, never logged.
+GITHUB_CLIENT_SECRET=""
+
+# HMAC signing secret for the gc_session owner-session cookie. Sessions are
+# stateless (no server-side store) — this secret is the only thing that
+# makes a cookie forgeable if leaked, so treat it like a signing key.
+SESSION_SECRET=""

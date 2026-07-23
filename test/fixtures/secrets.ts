@@ -19,6 +19,15 @@ export const TEST_SIGNING_KEY = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=';
 /** Fake numeric GitHub App id — never a real App. */
 export const TEST_GITHUB_APP_ID = '999999';
 
+/** Synthetic OAuth client id — never a real GitHub App. */
+export const TEST_GITHUB_CLIENT_ID = 'test-client-id';
+
+/** Synthetic OAuth client secret — never a real GitHub App. */
+export const TEST_GITHUB_CLIENT_SECRET = 'test-client-secret';
+
+/** Synthetic HMAC secret for the `gc_session` cookie — used only in tests. */
+export const TEST_SESSION_SECRET = 'test-session-secret';
+
 /**
  * Synthetic 2048-bit RSA keypair (PKCS8 PEM), generated once via
  * `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048` solely to

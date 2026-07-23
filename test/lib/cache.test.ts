@@ -4,6 +4,7 @@ import {
   buildEtag,
   edgeCache,
   matchesEtag,
+  purgeBadgeUrls,
   withConditionalGet,
 } from '../../src/lib/cache';
 
@@ -154,5 +155,43 @@ describe('edgeCache', () => {
     const response = await edgeCache(request, { waitUntil }, secondHandler);
     expect(secondHandler).toHaveBeenCalledOnce();
     await expect(response.text()).resolves.toBe('again');
+  });
+});
+
+describe('purgeBadgeUrls', () => {
+  it('deletes every metric/style/theme variant plus the bare-default URL (happy path)', async () => {
+    const owner = `purge-owner-${crypto.randomUUID()}`;
+    const name = 'repo-a';
+    const cache = caches.default;
+
+    // Seed a representative sample of the canonical variant set, plus one
+    // bare-default URL, so we can assert they're all gone afterward.
+    const seeded = [
+      `https://gitcert.harborstack.app/b/${owner}/${name}/commits.svg`,
+      `https://gitcert.harborstack.app/b/${owner}/${name}/commits.svg?style=flat&theme=light`,
+      `https://gitcert.harborstack.app/b/${owner}/${name}/size.svg?style=pill&theme=dark`,
+      `https://gitcert.harborstack.app/b/${owner}/${name}/language.svg?style=pill&theme=auto`,
+    ];
+    for (const url of seeded) {
+      await cache.put(
+        url,
+        new Response('<svg></svg>', { headers: { 'Cache-Control': 'public, max-age=300' } }),
+      );
+    }
+    for (const url of seeded) {
+      await expect(cache.match(url)).resolves.toBeDefined();
+    }
+
+    await purgeBadgeUrls({ owner, name });
+
+    for (const url of seeded) {
+      await expect(cache.match(url)).resolves.toBeUndefined();
+    }
+  });
+
+  it('is a no-op (never throws) when nothing was cached for the repo (edge case)', async () => {
+    await expect(
+      purgeBadgeUrls({ owner: `never-cached-${crypto.randomUUID()}`, name: 'repo-b' }),
+    ).resolves.toBeUndefined();
   });
 });

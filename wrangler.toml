@@ -20,3 +20,6 @@ directory = "public"
 
 [vars]
 GITHUB_APP_ID = ""
+# GitHub App OAuth client id — public (not a secret); the client secret and
+# SESSION_SECRET are set via `wrangler secret put` (see deploy notes).
+GITHUB_CLIENT_ID = ""

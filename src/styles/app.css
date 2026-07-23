@@ -10,6 +10,14 @@
 @source '../pages';
 
 :root {
+  /*
+   * Dashboard badge-preview panel background (mock dashboard.dc.html
+   * previewStyle): fixed #f7f5f0 / #1b1a18 per the RESOLVED badge theme,
+   * independent of the page palette — so explicit light/dark previews
+   * cannot reuse the theme-relative tokens. `--preview` covers theme=auto
+   * (follows prefers-color-scheme like the auto badge itself).
+   */
+  --preview: #f7f5f0;
   --paper: #faf9f6;
   --ink: #1c1b19;
   --body: #4a4842;
@@ -31,6 +39,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --preview: #1b1a18;
     --paper: #1b1a18;
     --ink: #e8e6e0;
     --body: #bab7ad;
@@ -69,6 +78,9 @@
   --color-avatar: var(--avatar);
   --color-dot: var(--dot);
   --color-nav: var(--nav);
+  --color-preview: var(--preview);
+  --color-preview-light: #f7f5f0;
+  --color-preview-dark: #1b1a18;
   --font-display:
     'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
   --font-mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
@@ -95,4 +107,23 @@ a[data-nav]:hover {
 
 ::selection {
   background: rgba(90, 160, 125, 0.28);
+}
+
+/* Dashboard repo-list scrollbar (mock dashboard.dc.html helmet CSS). */
+[data-repo-scroll] {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair-strong) transparent;
+}
+
+[data-repo-scroll]::-webkit-scrollbar {
+  width: 6px;
+}
+
+[data-repo-scroll]::-webkit-scrollbar-thumb {
+  background: var(--hair-strong);
+  border-radius: 3px;
+}
+
+[data-repo-scroll]::-webkit-scrollbar-track {
+  background: transparent;
 }
