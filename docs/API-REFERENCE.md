@@ -215,7 +215,23 @@ no stored token).
 - **(1)** GitHub's `error` param present → `400` error page (see below).
 - **(2)** `state` query param must timing-safe-match the `gc_oauth_state`
   cookie → missing/mismatch is a `400` error page with the state cookie
-  cleared.
+  cleared. **Bypass, install-initiated shape only:** this check is skipped
+  ONLY when the `state` query param is absent AND the `gc_oauth_state`
+  cookie is absent AND `installation_id` parses to a valid installation id
+  AND `setup_action` is present — GitHub's "Request user authorization
+  during installation" redirect starts the OAuth dance itself, so the
+  browser never receives a `gc_oauth_state` cookie and GitHub never sends
+  a `state` param. If either a `state` param or a `gc_oauth_state` cookie
+  is present, the mandatory timing-safe match still applies in full —
+  a mismatched or unpaired value is a `400` even when `installation_id` /
+  `setup_action` are present; install params never bypass a check that
+  actually runs. Security note: this leaves the standard, accepted
+  login-CSRF residual for GitHub App install flows — an attacker-crafted
+  callback can at worst sign the victim into the attacker's own identity,
+  never grant access to the victim's data, because the post-install
+  collect kick in **(6)** stays gated by the D1 ownership check against
+  the identity actually exchanged for this request, not by anything the
+  attacker controls.
 - **(3)** Exchanges `code` at `https://github.com/login/oauth/access_token`
   (`POST`, `Accept: application/json`) → failure is a `400` error page.
 - **(4)** `GET https://api.github.com/user` with the exchanged token →

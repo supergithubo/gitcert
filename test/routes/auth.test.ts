@@ -136,6 +136,106 @@ describe('GET /auth/callback', () => {
     expect(findSetCookie(response, 'gc_session')).toBeUndefined();
   });
 
+  it('rejects a missing state param and cookie with no install params (login shape, unchanged)', async () => {
+    const response = await SELF.fetch(`${ORIGIN}/auth/callback?code=abc`, {
+      redirect: 'manual',
+    });
+    expect(response.status).toBe(400);
+    expect(findSetCookie(response, 'gc_session')).toBeUndefined();
+  });
+
+  it('install-initiated shape: no state param, no state cookie, but installation_id + setup_action present — bypasses the state check (happy path)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 910,
+      accountLogin: 'wnston',
+      accountId: 42,
+      accountType: 'User',
+    });
+    await upsertRepos(env.DB, 910, [{ id: 9100, owner: 'wnston', name: 'repo-d', private: true }]);
+    // Never collected -> stale -> kick expected.
+
+    const graphqlCalls: string[] = [];
+    stubHappyOAuth({ id: 42, login: 'wnston' }, (url) => {
+      if (TOKEN_MINT_PATTERN.test(url)) {
+        return jsonResponse({ token: 'ghs_test', expires_at: '2026-07-22T13:00:00Z' }, 201);
+      }
+      if (url === GRAPHQL_URL) {
+        graphqlCalls.push(url);
+        return jsonResponse({ data: { r0: null } });
+      }
+      return null;
+    });
+
+    // No state query param, no gc_oauth_state cookie sent — exactly what
+    // GitHub's install-initiated redirect looks like in production.
+    const response = await SELF.fetch(
+      `${ORIGIN}/auth/callback?code=abc&installation_id=910&setup_action=install`,
+      { redirect: 'manual' },
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/dashboard');
+
+    const sessionCookie = findSetCookie(response, 'gc_session');
+    expect(sessionCookie).toBeDefined();
+    expect(sessionCookie).toContain('HttpOnly');
+
+    // waitUntil promises run in background; give them a tick to settle.
+    await vi.waitFor(() => expect(graphqlCalls.length).toBeGreaterThan(0));
+  });
+
+  it('install-initiated shape with a NOT-owned installation_id: session still created, no collect kicked, no token mint (permission boundary)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 912,
+      accountLogin: 'someone-else',
+      accountId: 999,
+      accountType: 'User',
+    });
+    await upsertRepos(env.DB, 912, [
+      { id: 9120, owner: 'someone-else', name: 'repo-e', private: true },
+    ]);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === TOKEN_URL) return jsonResponse({ access_token: 'gho_test_token' });
+      if (url === USER_URL) return jsonResponse({ id: 42, login: 'wnston' });
+      if (TOKEN_MINT_PATTERN.test(url))
+        throw new Error('must not mint a token for an unowned installation');
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // No state param, no state cookie — the install-initiated shape.
+    const response = await SELF.fetch(
+      `${ORIGIN}/auth/callback?code=abc&installation_id=912&setup_action=install`,
+      { redirect: 'manual' },
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/dashboard');
+    expect(findSetCookie(response, 'gc_session')).toBeDefined();
+  });
+
+  it('install shape with a mismatched state param still fails even with installation_id + setup_action present (permission boundary — failed state is never bypassed)', async () => {
+    const { nonce } = createStateCookie();
+    const response = await SELF.fetch(
+      `${ORIGIN}/auth/callback?code=abc&state=wrong-value&installation_id=911&setup_action=install`,
+      { redirect: 'manual', headers: { Cookie: `gc_oauth_state=${nonce}` } },
+    );
+    expect(response.status).toBe(400);
+    expect(findSetCookie(response, 'gc_session')).toBeUndefined();
+    expect(findSetCookie(response, 'gc_oauth_state')).toContain('Max-Age=0');
+  });
+
+  it('install shape with state param ABSENT but gc_oauth_state cookie PRESENT still fails even with installation_id + setup_action present (permission boundary — bypass requires BOTH absent)', async () => {
+    const { nonce } = createStateCookie();
+    const response = await SELF.fetch(
+      `${ORIGIN}/auth/callback?code=abc&installation_id=913&setup_action=install`,
+      { redirect: 'manual', headers: { Cookie: `gc_oauth_state=${nonce}` } },
+    );
+    expect(response.status).toBe(400);
+    expect(findSetCookie(response, 'gc_session')).toBeUndefined();
+    expect(findSetCookie(response, 'gc_oauth_state')).toContain('Max-Age=0');
+  });
+
   it('renders the error page when the code exchange fails (error path)', async () => {
     const { nonce } = createStateCookie();
     vi.stubGlobal(

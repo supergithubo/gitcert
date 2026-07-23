@@ -16,7 +16,8 @@ SPEC.md
 artifacts
 artifacts/*
 
-# Dependencies
+# Dependencies (bare name also matches the symlink worktrees receive — see V-001)
+node_modules
 node_modules/
 
 # Wrangler local state + build output

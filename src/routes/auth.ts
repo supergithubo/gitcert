@@ -118,9 +118,29 @@ auth.get('/auth/callback', async (c) => {
     return authErrorResponse();
   }
 
-  // (2) state must match the gc_oauth_state cookie, timing-safe.
+  // (2) state must match the gc_oauth_state cookie, timing-safe — UNLESS
+  // this is GitHub's install-initiated shape ("Request user authorization
+  // during installation"): GitHub starts that dance itself, so the browser
+  // never receives a gc_oauth_state cookie and GitHub never sends a state
+  // param. Only an ABSENT state+cookie pair combined with install params
+  // qualifies for the bypass; a PRESENT-but-wrong state must still fail
+  // even when install params are present (no bypass on a failed check).
+  //
+  // Security note: this leaves the standard, accepted login-CSRF residual
+  // for GitHub App install flows — an attacker who crafts this callback
+  // can at worst sign the victim into the attacker's own identity. It
+  // grants no access to the victim's data: the post-install collect kick
+  // below is gated by `kickPostInstallCollect`'s D1 ownership check against
+  // the identity actually exchanged for this request, not by anything the
+  // attacker controls.
   const stateCookie = getCookie(c, STATE_COOKIE_NAME);
-  if (!verifyState(c.req.query('state'), stateCookie)) {
+  const stateParam = c.req.query('state');
+  const isInstallShapeWithoutState =
+    !stateParam &&
+    !stateCookie &&
+    parseInstallationId(c.req.query('installation_id')) !== null &&
+    !!c.req.query('setup_action');
+  if (!isInstallShapeWithoutState && !verifyState(stateParam, stateCookie)) {
     return authErrorResponse();
   }
 
