@@ -21,7 +21,8 @@ export const BADGE_PATH_TEMPLATE = '/b/{OWNER}/{REPO}/{METRIC}.svg?style={STYLE}
 export const VERIFY_PATH_TEMPLATE = '/verify/{OWNER}/{REPO}';
 
 const BADGE_URL = `${SNIPPET_BASE_URL}${BADGE_PATH_TEMPLATE}`;
-const VERIFY_URL = `${SNIPPET_BASE_URL}${VERIFY_PATH_TEMPLATE}`;
+/** Absolute verify URL with {OWNER}/{REPO} placeholders — also the dashboard's Verification link/copy target. */
+export const VERIFY_URL = `${SNIPPET_BASE_URL}${VERIFY_PATH_TEMPLATE}`;
 
 /** Alt text carries the human label, never live numbers (spec Decision 12). */
 const ALT_TEXT = '{LABEL} — attested by GitCert';

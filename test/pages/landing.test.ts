@@ -129,10 +129,10 @@ describe('LandingPage accent discipline (mock authority)', () => {
   it('renders both CTAs as ink buttons with paper text, never accent', () => {
     for (const auth of [null, { attestedCount: 2 }] as const) {
       const html = render(auth);
-      // First match is now the nav wordmark link (ink text, not a button);
-      // the hero CTA is the last internal data-nav anchor on the page.
+      // First match is now the nav wordmark link (href="/", ink text, not a
+      // button); the hero CTA is the last internal data-nav anchor on the page.
       const anchors = [
-        ...html.matchAll(/<a data-nav="true" href="\/(?:auth\/login|dashboard)" class="([^"]+)"/g),
+        ...html.matchAll(/<a data-nav="true" href="\/(?:auth\/login|dashboard)?" class="([^"]+)"/g),
       ].map((m) => m[1]);
       expect(anchors.length).toBeGreaterThanOrEqual(2);
       for (const cls of anchors) expect(cls).not.toContain('accent');

@@ -20,7 +20,9 @@ import { metricLabel } from '../badges/value';
 import { Layout } from './layout';
 import {
   BADGE_PATH_TEMPLATE,
+  SNIPPET_BASE_URL,
   SNIPPET_TEMPLATES,
+  VERIFY_URL,
   buildSnippets,
   fillSnippetTemplate,
 } from './snippets';
@@ -58,7 +60,7 @@ const BUILDER_METRICS: readonly Metric[] = [
  * GitHub's manage/reselect-repos flow for the GitCert app — the same URL
  * serves first install (empty state) and later repo-selection edits.
  */
-const GITCERT_INSTALL_URL = 'https://github.com/apps/gitcert/installations/new';
+const GITCERT_INSTALL_URL = 'https://github.com/apps/gitcert-app/installations/new';
 
 const LABEL_CLASS = 'font-mono text-[12.5px] text-soft';
 const PANEL_HEADING_CLASS = 'font-mono text-[11px] tracking-[1.5px] text-muted uppercase';
@@ -92,11 +94,15 @@ const DASHBOARD_SCRIPT = `(function () {
   var snippetPre = document.getElementById('gc-snippet');
   var refreshBtn = document.getElementById('gc-refresh');
   var refreshNote = document.getElementById('gc-refresh-note');
+  var verifyLink = document.getElementById('gc-verify-link');
+  var verifyLabel = verifyLink ? verifyLink.querySelector('[data-verify-label]') : null;
+  var verifyCopy = document.getElementById('gc-verify-copy');
   var copyBtns = Array.prototype.slice.call(document.querySelectorAll('button[data-copy]'));
   var rows = Array.prototype.slice.call(document.querySelectorAll('button[data-repo-id]'));
   var current = { repo: repos[0], style: 'flat', shown: 'md', buster: 0 };
   var copyTimer = null;
   var refreshTimer = null;
+  var verifyTimer = null;
 
   function fill(template, v) {
     return template.replace(/\\{(OWNER|REPO|METRIC|LABEL|STYLE|THEME)\\}/g, function (m, k) {
@@ -145,6 +151,11 @@ const DASHBOARD_SCRIPT = `(function () {
       b.classList.toggle('cursor-not-allowed', !enabled);
       b.classList.toggle('cursor-pointer', enabled);
     });
+    if (verifyCopy) {
+      verifyCopy.classList.toggle('opacity-45', !enabled);
+      verifyCopy.classList.toggle('cursor-not-allowed', !enabled);
+      verifyCopy.classList.toggle('cursor-pointer', enabled);
+    }
   }
 
   function renderRows() {
@@ -160,10 +171,18 @@ const DASHBOARD_SCRIPT = `(function () {
     });
   }
 
+  function renderVerify(v) {
+    if (!verifyLink) return;
+    verifyLink.href = fill(tpl.verifyUrl, v);
+    if (verifyLabel) verifyLabel.textContent = v.OWNER + '/' + v.REPO;
+  }
+
   function render() {
-    renderPreview(values());
+    var v = values();
+    renderPreview(v);
     renderBuilder();
     renderRows();
+    renderVerify(v);
   }
 
   function resetCopyButtons() {
@@ -215,6 +234,22 @@ const DASHBOARD_SCRIPT = `(function () {
       copyTimer = setTimeout(resetCopyButtons, 1600);
     });
   });
+
+  if (verifyCopy) {
+    verifyCopy.addEventListener('click', function () {
+      if (!current.repo.included) return;
+      try {
+        if (navigator.clipboard) navigator.clipboard.writeText(verifyLink.href);
+      } catch (e) {}
+      verifyCopy.setAttribute('data-copied', '');
+      verifyCopy.classList.add('border-accent', 'bg-panel', 'text-accent');
+      clearTimeout(verifyTimer);
+      verifyTimer = setTimeout(function () {
+        verifyCopy.removeAttribute('data-copied');
+        verifyCopy.classList.remove('border-accent', 'bg-panel', 'text-accent');
+      }, 1600);
+    });
+  }
 
   enableBtn.addEventListener('click', function () {
     var repo = current.repo;
@@ -315,7 +350,7 @@ function DashboardCard(props: {
   const { repos, selected, lastSyncAt } = props;
   const state = {
     repos: repos.map((r) => ({ id: r.id, owner: r.owner, name: r.name, included: r.included })),
-    templates: { ...SNIPPET_TEMPLATES, badgePath: BADGE_PATH_TEMPLATE },
+    templates: { ...SNIPPET_TEMPLATES, badgePath: BADGE_PATH_TEMPLATE, verifyUrl: VERIFY_URL },
   };
   const stateJson = JSON.stringify(state).replace(/</g, '\\u003c');
   return (
@@ -493,6 +528,36 @@ function BuilderPanel(props: { selected: DashboardRepo }) {
       >
         {snippets.md}
       </pre>
+
+      <div class={`${PANEL_HEADING_CLASS} mt-7 mb-2`}>Verification</div>
+      {/* verify link + copy target track the selected repo; the inline script
+          sets .href and the label's textContent (DOM APIs, no HTML injection). */}
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[13px]">
+        <span class="text-muted">verify:</span>
+        <a
+          id="gc-verify-link"
+          data-nav
+          href={`${SNIPPET_BASE_URL}/verify/${initial.owner}/${initial.repo}`}
+          target="_blank"
+          rel="noopener"
+          class="text-accent"
+        >
+          <span data-verify-label>
+            {initial.owner}/{initial.repo}
+          </span>{' '}
+          ↗
+        </a>
+        <button
+          type="button"
+          id="gc-verify-copy"
+          aria-label="copy verify URL"
+          class={`inline-flex items-center rounded-[2px] border border-hair-strong bg-transparent p-[7px] text-soft ${
+            enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-45'
+          }`}
+        >
+          <CopyIcon />
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 /**
- * Shared shell guards (UI polish batch): the wordmark→dashboard link, the
- * favicon (must stay a byte-exact render of the canonical seal — never a
+ * Shared shell guards (UI polish batch): the wordmark→landing link, the
+ * favicon (a filled variant reusing the canonical seal geometry — never a
  * redrawn copy), and the site footer (build-constant only: it also renders
  * into the cached signed-out landing variant).
  */
@@ -15,9 +15,9 @@ function render(): string {
 }
 
 describe('Layout nav wordmark', () => {
-  it('links the seal+wordmark to /dashboard without link-style leakage', () => {
+  it('links the seal+wordmark to / (landing) without link-style leakage', () => {
     const html = render();
-    const start = html.indexOf('href="/dashboard"');
+    const start = html.indexOf('href="/"');
     expect(start).toBeGreaterThan(-1);
     const anchorOpen = html.lastIndexOf('<a', start);
     const anchor = html.slice(anchorOpen, html.indexOf('</a>', anchorOpen));
@@ -38,13 +38,23 @@ describe('Layout favicon', () => {
     expect(head).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg"');
   });
 
-  it('public/favicon.svg is the canonical seal geometry, not a redraw', () => {
-    // The asset must stay byte-identical to sealSvg output (styling rule:
-    // one canonical seal, drawn in src/badges/seal.ts and nowhere else).
-    // #2f6d4f is the light --accent literal — a favicon cannot resolve CSS
-    // vars, so the accent is baked in (theme-agnostic: accent on transparent).
-    const expected = sealSvg({ size: 24, kind: 'check', color: '#2f6d4f' });
-    expect(env.TEST_FAVICON_SVG.trim()).toBe(expected);
+  it('public/favicon.svg reuses the canonical seal geometry, filled for tab visibility', () => {
+    // A favicon is ~16px in a tab: the in-UI seal (thin 2px stroke on a
+    // TRANSPARENT ground) vanishes at that size. The favicon is therefore a
+    // FILLED variant — accent disc + white check — but reuses the exact
+    // canonical geometry so it stays the same mark: same circle center and
+    // the identical check path emitted by src/badges/seal.ts.
+    const svg = env.TEST_FAVICON_SVG;
+    // Same check path as the canonical seal (sourced from seal.ts, not redrawn).
+    expect(sealSvg({ size: 24, kind: 'check', color: '#2f6d4f' })).toContain('d="m9 12 2 2 4-4"');
+    expect(svg).toContain('d="m9 12 2 2 4-4"');
+    // Same circle center as the canonical seal.
+    expect(svg).toContain('cx="12" cy="12"');
+    // Filled accent disc (visibility) with a white check (contrast) — the
+    // two properties the transparent-stroke in-UI seal lacks at 16px.
+    expect(svg).toContain('fill="#2f6d4f"');
+    expect(svg).toContain('stroke="#ffffff"');
+    expect(svg).toContain('viewBox="0 0 24 24"');
   });
 });
 

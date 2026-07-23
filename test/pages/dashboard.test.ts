@@ -97,7 +97,7 @@ describe('DashboardPage — header and repo list', () => {
     const start = html.indexOf('id="gc-refresh"');
     const block = html.slice(start, html.indexOf('gc-refresh-note'));
     expect(block).toContain('edit repos');
-    expect(block).toContain('href="https://github.com/apps/gitcert/installations/new"');
+    expect(block).toContain('href="https://github.com/apps/gitcert-app/installations/new"');
     expect(block).toContain('target="_blank"');
     expect(block).toContain('rel="noopener"');
     // Same secondary-button treatment on both (refresh + edit repos), and
@@ -206,6 +206,32 @@ describe('DashboardPage — state block and inline script', () => {
     expect(stateBlock).not.toContain('a</script><b');
   });
 
+  it('renders the Verification section: verify link + copy for the selected repo', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    expect(html).toContain('Verification');
+    expect(html).toContain('verify:');
+    // Link to the selected repo's absolute verify URL, opens in a new tab.
+    expect(html).toContain('id="gc-verify-link"');
+    expect(html).toContain('href="https://gitcert.harborstack.app/verify/wnston/client-platform"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener"');
+    // Visible label sits in its own span (the script rewrites textContent).
+    expect(html).toContain('data-verify-label');
+    expect(html).toContain('id="gc-verify-copy"');
+    // The verify URL template is carried in the state block for the script.
+    expect(html).toContain('"verifyUrl"');
+    expect(html).toContain('/verify/{OWNER}/{REPO}');
+  });
+
+  it('verify link/copy track the repo via DOM APIs (no user data into JS)', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    // href set via .href, label via textContent — both XSS-safe DOM writes.
+    expect(html).toContain('verifyLink.href = fill(tpl.verifyUrl, v)');
+    expect(html).toContain("verifyLabel.textContent = v.OWNER + '/' + v.REPO");
+    // Copy target is the resolved link href, not a string built from user data.
+    expect(html).toContain('navigator.clipboard.writeText(verifyLink.href)');
+  });
+
   it('includes the constant builder script wired to the owner routes', () => {
     const html = render(DashboardPage(fixtureProps()));
     expect(html).toContain('/settings');
@@ -270,7 +296,7 @@ describe('DashboardPage responsive breakpoints (mobile spec)', () => {
 describe('DashboardPage — empty state', () => {
   it('renders the install link and hides refresh, builder, and scripts', () => {
     const html = render(DashboardPage(fixtureProps({ repos: [], lastSyncAt: null })));
-    expect(html).toContain('https://github.com/apps/gitcert/installations/new');
+    expect(html).toContain('https://github.com/apps/gitcert-app/installations/new');
     expect(html).toContain('No repos yet');
     expect(html).not.toContain('id="gc-refresh"');
     expect(html).not.toContain('id="gc-state"');

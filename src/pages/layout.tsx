@@ -86,7 +86,7 @@ function Nav() {
       <div class="mx-auto flex h-14 max-w-[1120px] items-center justify-between px-4 sm:h-[58px] sm:px-7">
         {/* data-nav suppresses the base a:hover underline; text-ink overrides
             the base accent link color — the wordmark keeps its exact look. */}
-        <a data-nav href="/dashboard" class="flex items-center gap-[9px] text-ink">
+        <a data-nav href="/" class="flex items-center gap-[9px] text-ink">
           {raw(sealSvg({ size: 19, kind: 'check', color: 'var(--accent)' }))}
           <span class="font-mono text-[16px] font-semibold tracking-[-0.4px]">GitCert</span>
         </a>
