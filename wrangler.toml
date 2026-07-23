@@ -6,9 +6,7 @@ routes = [{ pattern = "gitcert.harborstack.app/*", zone_name = "harborstack.app"
 [[d1_databases]]
 binding = "DB"
 database_name = "gitcert"
-# Placeholder — real database_id is set at first deploy (see deploy notes).
-# Run `wrangler d1 create gitcert` and paste the returned id here.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "54400dbb-a6b7-437f-bdad-3efb4f52d352"
 migrations_dir = "migrations"
 
 [triggers]
@@ -19,7 +17,7 @@ crons = ["*/15 * * * *"]
 directory = "public"
 
 [vars]
-GITHUB_APP_ID = ""
+GITHUB_APP_ID = "4372262"
 # GitHub App OAuth client id — public (not a secret); the client secret and
 # SESSION_SECRET are set via `wrangler secret put` (see deploy notes).
-GITHUB_CLIENT_ID = ""
+GITHUB_CLIENT_ID = "Iv23li5arGyR24Lerrba"
