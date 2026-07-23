@@ -6,6 +6,7 @@ import { api } from './routes/api';
 import { verify } from './routes/verify';
 import { auth } from './routes/auth';
 import { dashboard } from './routes/dashboard';
+import { landing } from './routes/landing';
 import { runCollector } from './collector/run';
 
 /**
@@ -20,6 +21,9 @@ app.route('/', api);
 app.route('/', verify);
 app.route('/', auth);
 app.route('/', dashboard);
+// Mounted LAST (spec overview §Step 2): GET / is the most general route in
+// this assembly, so it must not shadow any more specific path above it.
+app.route('/', landing);
 
 export default {
   fetch: app.fetch,

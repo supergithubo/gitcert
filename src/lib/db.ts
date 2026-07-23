@@ -399,6 +399,30 @@ export async function updateRepoIncluded(
 }
 
 /**
+ * Truthful count of the session tenant's attested repos (M4 spec overview
+ * §Step 2, backs `GET /`'s signed-in CTA microcopy): repos that are
+ * `included = 1`, non-removed, on a live (non-suspended) installation
+ * owned by `accountId` (Decision 2's numeric-id mapping, rename-safe),
+ * AND have a stored `stats` row (an `INNER JOIN`, not a `LEFT JOIN` — a
+ * just-installed, not-yet-collected repo does not count as "attested").
+ * `0` for an unknown account, same as any tenant with nothing collected.
+ */
+export async function countAttestedRepos(db: D1Database, accountId: number): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM repos r
+       JOIN installations i ON i.id = r.installation_id
+       JOIN stats s ON s.repo_id = r.id
+       WHERE i.account_id = ?1 AND i.suspended_at IS NULL
+         AND r.removed_at IS NULL AND r.included = 1`,
+    )
+    .bind(accountId)
+    .first<{ count: number }>();
+  return row?.count ?? 0;
+}
+
+/**
  * All active (non-removed) repos for an installation, joined with their
  * latest stored stats (commits, first_commit_at) so the collector can
  * decide whether a first-commit refetch is needed without a second query.

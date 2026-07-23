@@ -17,6 +17,8 @@ export const CACHE_CONTROL = {
   collecting: 'public, max-age=60',
   /** The verify certificate (normal + not-found) — simpler policy than badge/API, no CDN/SWR tiers. */
   verify: 'public, max-age=300',
+  /** `GET /`'s signed-out variant — same value as `verify` today, kept as its own name so per-surface tuning stays possible (M4 spec overview §Step 2). */
+  landing: 'public, max-age=300',
   /** `/pubkey`. */
   pubkey: 'public, max-age=86400',
   /** `/healthz` only — bypasses `caches.default` entirely (operational probe, freshness is the point). */

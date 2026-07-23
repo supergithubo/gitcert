@@ -8,9 +8,9 @@ M1 shipped the GitHub App webhook receiver. M2 added the public read
 surfaces — badge SVGs, signed JSON, the verify certificate, the public
 key endpoint, and the health probe. M3 adds the owner surfaces below —
 OAuth login/session, the dashboard, and the owner mutations
-(`/repos/:id/settings`, `/repos/:id/refresh`). The landing page `/` and
-the shadcn registry (`/r/*`) still land in later milestones per
-`SPEC.md` §12.
+(`/repos/:id/settings`, `/repos/:id/refresh`). M4 adds the landing page
+(`GET /`, below). The shadcn registry (`/r/*`) still lands in a later
+milestone per `SPEC.md` §12.
 
 Every route below is a `GET`. No handler calls GitHub in the request
 path — each is one D1 read (`selectPublicRepoState` / `selectOldestCollectedAt`)
@@ -26,7 +26,7 @@ response body, regardless of which of the four caused it.
 
 ## `GET /b/:owner/:repo/:metric.svg`
 
-Badge SVG, e.g. `<img src="https://gitcert.harborstack.app/b/wnston/client-platform/commits.svg">`.
+Badge SVG, e.g. `<img src="https://gitcert.harborstack.app/b/johndoe/client-platform/commits.svg">`.
 
 - **Auth:** none. Public, cacheable, CORS-open.
 - **Path params:**
@@ -63,7 +63,7 @@ Badge SVG, e.g. `<img src="https://gitcert.harborstack.app/b/wnston/client-platf
 ## `GET /api/:owner/:repo.json`
 
 Signed JSON attestation for one repo, e.g.
-`https://gitcert.harborstack.app/api/wnston/client-platform.json`.
+`https://gitcert.harborstack.app/api/johndoe/client-platform.json`.
 
 - **Auth:** none. Public, cacheable, CORS-open.
 - **200** (repo visible, stats row exists):
@@ -87,7 +87,7 @@ Signed JSON attestation for one repo, e.g.
 ## `GET /verify/:owner/:repo`
 
 Server-rendered HTML certificate for humans, e.g.
-`https://gitcert.harborstack.app/verify/wnston/client-platform`. Linked from
+`https://gitcert.harborstack.app/verify/johndoe/client-platform`. Linked from
 badges' verified seal.
 
 - **Auth:** none. Public, cacheable, CORS-open.
@@ -170,6 +170,41 @@ for direct client use.
   on `installation created`, also enqueues an immediate collector run for
   that installation via `executionCtx.waitUntil` (fire-and-forget — the
   response does not wait on it).
+
+## `GET /`
+
+The landing page (M4), e.g. `https://gitcert.harborstack.app/`. Mounted
+last in the route assembly. Renders one of two variants depending on
+whether the request carries a `gc_session` cookie — the cookie check
+happens **before** any `caches.default` lookup, so the shared, URL-keyed
+cache can only ever see cookie-less requests and can never leak a
+personalized variant (architectures/edge-cache).
+
+- **No `gc_session` cookie** — the signed-out variant (demo badges, a
+  "Connect GitHub" CTA to `/auth/login`). `200`, `Content-Type: text/html;
+charset=UTF-8`, `Cache-Control: public, max-age=300`,
+  `Access-Control-Allow-Origin: *`. Served through `caches.default`, keyed
+  on the full request URL, same as the other public GETs above — this is
+  the only branch that ever touches the shared cache. Zero I/O beyond the
+  cache lookup: a pure template render, no D1 read, no GitHub call.
+- **`gc_session` cookie present** — `caches.default` is never consulted or
+  populated, regardless of whether the cookie verifies. Always
+  `Cache-Control: no-store`, no CORS header (owner-surface parity with
+  `/dashboard`):
+  - **Valid session** — one D1 read (`countAttestedRepos`, scoped to the
+    session's `github_id`) → the signed-in variant (a "Go to Dashboard"
+    CTA to `/dashboard`, pluralized `N repos attested` microcopy). The
+    count is truthful: only repos that are `included = 1`, non-removed, on
+    a live (non-suspended) installation, **and** already have a stored
+    stats row count — a just-installed, not-yet-collected repo does not
+    inflate the number.
+  - **Invalid/expired session** — the signed-out variant is rendered
+    (same markup as the cookie-less case), plus
+    `Set-Cookie: gc_session=...; Max-Age=0` clearing the stale cookie so
+    the client's next request falls back onto the cacheable cookie-less
+    path. A forged or expired claim renders only public content — no
+    error, no detail leaked.
+- No GitHub call anywhere in this route.
 
 ## Owner routes (M3)
 

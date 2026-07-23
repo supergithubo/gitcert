@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  countAttestedRepos,
   markRepoRemoved,
   selectInstallation,
   selectOldestCollectedAt,
@@ -670,6 +671,83 @@ describe('db.ts', () => {
       await markRepoRemoved(env.DB, 520, '2026-07-22T00:00:00Z');
 
       await expect(updateRepoIncluded(env.DB, 520, false, 5200)).resolves.toBe(0);
+    });
+  });
+
+  describe('countAttestedRepos', () => {
+    it('counts only included, live, collected repos across the tenant (happy path)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 60,
+        accountLogin: 'wnston',
+        accountId: 6000,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 60, [
+        { id: 600, owner: 'wnston', name: 'repo-a', private: true },
+        { id: 601, owner: 'wnston', name: 'repo-b', private: true },
+      ]);
+      await upsertStats(env.DB, fixtureStats(600));
+      await upsertStats(env.DB, fixtureStats(601));
+
+      await expect(countAttestedRepos(env.DB, 6000)).resolves.toBe(2);
+    });
+
+    it('excludes a repo with included = 0 even though it has a stats row', async () => {
+      await upsertInstallation(env.DB, {
+        id: 61,
+        accountLogin: 'wnston',
+        accountId: 6100,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 61, [{ id: 610, owner: 'wnston', name: 'repo-c', private: true }]);
+      await upsertStats(env.DB, fixtureStats(610));
+      await env.DB.prepare('UPDATE repos SET included = 0 WHERE id = ?1').bind(610).run();
+
+      await expect(countAttestedRepos(env.DB, 6100)).resolves.toBe(0);
+    });
+
+    it('excludes a removed repo even though it has a stats row', async () => {
+      await upsertInstallation(env.DB, {
+        id: 62,
+        accountLogin: 'wnston',
+        accountId: 6200,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 62, [{ id: 620, owner: 'wnston', name: 'repo-d', private: true }]);
+      await upsertStats(env.DB, fixtureStats(620));
+      await markRepoRemoved(env.DB, 620, '2026-07-22T00:00:00Z');
+
+      await expect(countAttestedRepos(env.DB, 6200)).resolves.toBe(0);
+    });
+
+    it('excludes every repo of a suspended installation even though they have stats rows', async () => {
+      await upsertInstallation(env.DB, {
+        id: 63,
+        accountLogin: 'wnston',
+        accountId: 6300,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 63, [{ id: 630, owner: 'wnston', name: 'repo-e', private: true }]);
+      await upsertStats(env.DB, fixtureStats(630));
+      await suspendInstallation(env.DB, 63, '2026-07-22T00:00:00Z');
+
+      await expect(countAttestedRepos(env.DB, 6300)).resolves.toBe(0);
+    });
+
+    it('excludes an included, live repo with no stats row — not yet collected (edge case)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 64,
+        accountLogin: 'wnston',
+        accountId: 6400,
+        accountType: 'User',
+      });
+      await upsertRepos(env.DB, 64, [{ id: 640, owner: 'wnston', name: 'repo-f', private: true }]);
+
+      await expect(countAttestedRepos(env.DB, 6400)).resolves.toBe(0);
+    });
+
+    it('returns 0 for an unknown account id (edge case)', async () => {
+      await expect(countAttestedRepos(env.DB, 999999)).resolves.toBe(0);
     });
   });
 });
