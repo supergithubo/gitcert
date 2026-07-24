@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { DocsPage, type DocsPageProps } from '../../src/pages/docs';
 
@@ -7,6 +8,18 @@ function render(account: DocsPageProps['account'] = null): string {
 
 function count(html: string, needle: string): number {
   return html.split(needle).length - 1;
+}
+
+/** The s3 badge grid markup (from the eyebrow anchor to the s4 section). */
+function s3Slice(html: string): string {
+  return html.slice(html.indexOf('id="s3"'), html.indexOf('id="s4"'));
+}
+
+/** The inline scrollspy <script> body. */
+function scrollspyScript(html: string): string {
+  const marker = 'IntersectionObserver';
+  const scriptOpen = html.lastIndexOf('<script>', html.indexOf(marker));
+  return html.slice(scriptOpen, html.indexOf('</script>', scriptOpen));
 }
 
 describe('DocsPage structure', () => {
@@ -40,6 +53,108 @@ describe('DocsPage structure', () => {
 
   it('sets the page title', () => {
     expect(render()).toContain('<title>GitCert — documentation</title>');
+  });
+});
+
+describe('DocsPage scrollspy active-nav (issue #1)', () => {
+  it('ships one inline IntersectionObserver script with the mock rootMargin', () => {
+    const script = scrollspyScript(render());
+    expect(script).toContain('IntersectionObserver');
+    expect(script).toContain("rootMargin: '-25% 0px -65% 0px'");
+    expect(script).toContain('threshold: 0');
+  });
+
+  it('is a constant script with ZERO interpolated user data (XSS discipline)', () => {
+    // The only dynamic tokens are the static section ids s1..s9 — assert the
+    // literal id array is present and no template interpolation survived.
+    const script = scrollspyScript(render({ handle: 'octocat' }));
+    expect(script).toContain("['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9']");
+    expect(script).not.toContain('${');
+    expect(script).not.toContain('octocat');
+    // Identical regardless of the account prop — nothing user-derived leaks in.
+    expect(scrollspyScript(render(null))).toBe(scrollspyScript(render({ handle: 'anyone' })));
+  });
+
+  it('hooks every desktop sidebar link with data-spy-link and pre-marks s1 active', () => {
+    const html = render();
+    // Nine sidebar links carry the scoping hook (the mobile jump-list does not).
+    // Match the rendered attribute so the script's own `[data-spy-link]`
+    // selector string is not miscounted as a link.
+    expect(count(html, 'data-spy-link="true"')).toBe(9);
+    // Server-rendered initial active state so the first paint (and the
+    // JS-disabled state) shows "01 Overview" highlighted — exactly one link.
+    expect(count(html, 'data-active=""')).toBe(1);
+  });
+
+  it('degrades gracefully — spy links are still plain #anchors', () => {
+    const html = render();
+    // Every spy link is an <a href="#sN"> so navigation works with JS disabled;
+    // only the scroll-driven highlight needs the observer.
+    for (let i = 1; i <= 9; i++) {
+      expect(html).toContain(`href="#s${i}"`);
+    }
+    // No smooth-scroll / preventDefault machinery was ported (native anchors).
+    expect(scrollspyScript(html)).not.toContain('preventDefault');
+  });
+});
+
+describe('DocsPage s3 badge column alignment (issue #2)', () => {
+  it('lays the badge grid out as a CSS table at sm (aligns metric | flat | pill)', () => {
+    const s3 = s3Slice(render());
+    // The CSS-table structure is what column-aligns variable-width badges.
+    expect(s3).toContain('sm:table');
+    expect(s3).toContain('sm:table-row');
+    expect(s3).toContain('sm:table-cell');
+    expect(s3).toContain('sm:align-middle');
+    // Cells hold their column width regardless of badge width.
+    expect(s3).toContain('whitespace-nowrap');
+    // The pill column absorbs the remaining width.
+    expect(s3).toContain('sm:w-full');
+    // Horizontal scroll rather than clipping when a badge overflows.
+    expect(s3).toContain('overflow-x-auto');
+  });
+
+  it('keeps the base-breakpoint stacked treatment with inline flat/pill labels', () => {
+    const s3 = s3Slice(render());
+    // 8 rows still self-label at base (mobile) with a mini "flat"/"pill" tag.
+    expect(count(s3, 'sm:hidden')).toBe(16);
+    expect(s3).toContain('flex flex-col');
+  });
+
+  it('leaves the badge SVG samples byte-frozen (16 live production SVGs)', () => {
+    // Layout-only change: the sample count and formatting are unchanged.
+    expect(count(render(), 'role="img"')).toBe(16);
+  });
+});
+
+describe('DocsPage back-to-dashboard link (issue #3, docs half)', () => {
+  it('renders the muted mono back-link only when signed in', () => {
+    const signedIn = render({ handle: 'octocat' });
+    expect(signedIn).toContain('← Back to dashboard');
+    const back = signedIn.slice(signedIn.indexOf('← Back to dashboard') - 200);
+    expect(back).toContain('href="/dashboard"');
+  });
+
+  it('omits the back-link on the signed-out (cacheable) render', () => {
+    expect(render(null)).not.toContain('Back to dashboard');
+  });
+});
+
+describe('DocsPage stale-build guard (compiled styles.css)', () => {
+  it('has every new scrollspy/table/back-link utility compiled (run build:css)', () => {
+    const css = env.TEST_COMPILED_CSS;
+    for (const sel of [
+      '.sm\\:table',
+      '.sm\\:table-row',
+      '.sm\\:table-cell',
+      '.sm\\:align-middle',
+      '.sm\\:border-collapse',
+      '.overflow-x-auto',
+      '.sm\\:pr-\\[22px\\]',
+      '.sm\\:pl-\\[18px\\]',
+    ]) {
+      expect(css, `missing compiled utility ${sel} — run npm run build:css`).toContain(sel);
+    }
   });
 });
 

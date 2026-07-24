@@ -182,6 +182,20 @@
   transform: rotate(180deg);
 }
 
+/*
+ * Docs scrollspy active-nav (docs.tsx SCROLLSPY_SCRIPT toggles `data-active`
+ * on the desktop sidebar link of the section in view). UNLAYERED on purpose —
+ * the link carries Tailwind's layered `border-transparent` / `text-muted`
+ * utilities, and an unlayered rule out-cascades any @layer utilities, so this
+ * accent border + ink text wins without !important (same cascade trick as the
+ * account-caret block above). The mock (docs.dc.html line 373) is the
+ * authoritative active treatment: accent left-border + ink text.
+ */
+[data-spy-link][data-active] {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
 @theme inline {
   --color-paper: var(--paper);
   --color-ink: var(--ink);

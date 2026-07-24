@@ -177,6 +177,56 @@ describe('VerifyNotFoundPage', () => {
   });
 });
 
+/** The `← Back to dashboard` anchor substring, or '' when absent. */
+function backLinkAnchor(html: string): string {
+  const marker = '← Back to dashboard';
+  const i = html.indexOf(marker);
+  if (i === -1) return '';
+  return html.slice(html.lastIndexOf('<a', i), html.indexOf('</a>', i) + 4);
+}
+
+describe('Verify back-to-dashboard link (issue #3, verify half)', () => {
+  const collecting = (backLink?: boolean) =>
+    render(VerifyCollectingPage({ owner: 'wnston', repo: 'r', backLink }));
+  const notFound = (backLink?: boolean, owner = 'wnston', repo = 'r') =>
+    render(VerifyNotFoundPage({ owner, repo, backLink }));
+  const certificate = (backLink?: boolean) => render(VerifyPage(fixtureProps({ backLink })));
+
+  it('renders the back-link on ALL THREE states when backLink is set (D1)', () => {
+    for (const html of [certificate(true), collecting(true), notFound(true)]) {
+      expect(html).toContain('← Back to dashboard');
+      expect(backLinkAnchor(html)).toContain('href="/dashboard"');
+    }
+  });
+
+  it('omits the back-link (byte-identical to today) when backLink is absent/false', () => {
+    // The cookie-less cached path depends on this: default markup is unchanged.
+    for (const html of [certificate(), collecting(), notFound()]) {
+      expect(html).not.toContain('← Back to dashboard');
+    }
+    // An explicit false is identical to omitting it entirely.
+    expect(certificate(false)).toBe(certificate());
+    expect(collecting(false)).toBe(collecting());
+    expect(notFound(false)).toBe(notFound());
+  });
+
+  it('links the GENERIC /dashboard on not-found, never repo/owner-derived (no oracle)', () => {
+    const anchor = backLinkAnchor(notFound(true, 'someowner', 'somerepo'));
+    expect(anchor).toContain('href="/dashboard"');
+    expect(anchor).not.toContain('someowner');
+    expect(anchor).not.toContain('somerepo');
+  });
+
+  it('renders a cause-independent back-link — identical across different repos', () => {
+    // The link is the same bytes no matter which (hidden) repo the viewer hit,
+    // so a signed-in not-found leaks nothing about which repo exists.
+    const a = backLinkAnchor(notFound(true, 'alpha', 'one'));
+    const b = backLinkAnchor(notFound(true, 'beta', 'two'));
+    expect(a).toBe(b);
+    expect(a).not.toBe('');
+  });
+});
+
 describe('VerifyPage footer (shared shell)', () => {
   it('renders the site footer', () => {
     const html = render(VerifyPage(fixtureProps()));

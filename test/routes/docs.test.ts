@@ -23,6 +23,7 @@ describe('GET /docs', () => {
     const html = await first.text();
     expect(html).not.toContain('data-account-menu');
     expect(html).toContain('Documentation');
+    expect(html).not.toContain('← Back to dashboard');
 
     // Second cookie-less request is served straight from caches.default —
     // never re-renders, never touches D1 (architectures/edge-cache).
@@ -45,6 +46,8 @@ describe('GET /docs', () => {
     const html = await response.text();
     expect(html).toContain('data-account-menu');
     expect(html).toContain('@octocat');
+    expect(html).toContain('← Back to dashboard');
+    expect(html).toContain('href="/dashboard"');
 
     // A cookied request must never be served from, or populate, the shared
     // cache (architectures/edge-cache CRITICAL — no personalized leak).
@@ -61,6 +64,7 @@ describe('GET /docs', () => {
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     const html = await response.text();
     expect(html).not.toContain('data-account-menu');
+    expect(html).not.toContain('← Back to dashboard');
 
     const sessionCookie = findSetCookie(response, 'gc_session');
     expect(sessionCookie).toBeDefined();

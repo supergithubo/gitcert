@@ -28,6 +28,25 @@ describe('app.css theme scopes', () => {
   });
 });
 
+describe('app.css docs scrollspy active-nav rule (issue #1)', () => {
+  it('defines the unlayered [data-spy-link][data-active] accent/ink rule', () => {
+    // Unlayered so it out-cascades the link's layered border-transparent /
+    // text-muted utilities (same trick as the account-caret rule). Source form.
+    expect(has('[data-spy-link][data-active]{border-color:var(--accent);color:var(--ink);}')).toBe(
+      true,
+    );
+  });
+
+  it('survives build:css into the compiled stylesheet (stale-build guard)', () => {
+    // The compiled artifact is what the browser loads — a source-only rule that
+    // never made it through build:css would silently no-op the highlight.
+    const compiled = env.TEST_COMPILED_CSS.replace(/\s+/g, '');
+    expect(compiled).toContain(
+      '[data-spy-link][data-active]{border-color:var(--accent);color:var(--ink)}',
+    );
+  });
+});
+
 describe('app.css --gc-* overrides mirror src/badges/theme.ts', () => {
   const flatNormal = FLAT_COLORS.value.normal;
 

@@ -24,6 +24,13 @@ export interface VerifyProps {
   /** Base64 Ed25519 signature — rendered as first-4…last-4. */
   signature: string;
   stats: PublicStats;
+  /**
+   * When true (a signed-in viewer, set by the session-aware route), render a
+   * generic `← Back to dashboard` link in the CertFrame. Omitted by default so
+   * the cookie-less cached path stays byte-identical. The link is always the
+   * generic `/dashboard` — never repo/owner/cause-derived (no existence oracle).
+   */
+  backLink?: boolean;
 }
 
 /**
@@ -84,10 +91,15 @@ const VERIFY_SCRIPT = `(function () {
 })();`;
 
 export function VerifyPage(props: VerifyProps) {
-  const { owner, repo, isPrivate, certSerial, collectedAt, signature, stats } = props;
+  const { owner, repo, isPrivate, certSerial, collectedAt, signature, stats, backLink } = props;
   const sigShort = `${signature.slice(0, 4)}…${signature.slice(-4)}`;
   return (
-    <CertFrame owner={owner} repo={repo} title={`${owner}/${repo} — GitCert attestation`}>
+    <CertFrame
+      owner={owner}
+      repo={repo}
+      title={`${owner}/${repo} — GitCert attestation`}
+      backLink={backLink}
+    >
       <div class="px-5 pt-6 pb-7 sm:px-[44px] sm:pt-[34px] sm:pb-10">
         <div class="flex items-start justify-between">
           <CardBrand />
@@ -203,8 +215,8 @@ export function VerifyPage(props: VerifyProps) {
   );
 }
 
-export function VerifyCollectingPage(props: { owner: string; repo: string }) {
-  const { owner, repo } = props;
+export function VerifyCollectingPage(props: { owner: string; repo: string; backLink?: boolean }) {
+  const { owner, repo, backLink } = props;
   // Constant markup: the collecting badge carries no repo data (theme=auto
   // so it follows the page's prefers-color-scheme).
   const collectingBadge = renderBadge({
@@ -216,7 +228,12 @@ export function VerifyCollectingPage(props: { owner: string; repo: string }) {
     title: 'collecting…',
   });
   return (
-    <CertFrame owner={owner} repo={repo} title={`${owner}/${repo} — GitCert attestation`}>
+    <CertFrame
+      owner={owner}
+      repo={repo}
+      title={`${owner}/${repo} — GitCert attestation`}
+      backLink={backLink}
+    >
       <div class="px-5 pt-6 pb-7 sm:px-[44px] sm:pt-[34px] sm:pb-10">
         <CardBrand />
         <div class="my-6 h-px bg-hair" />
@@ -232,10 +249,10 @@ export function VerifyCollectingPage(props: { owner: string; repo: string }) {
   );
 }
 
-export function VerifyNotFoundPage(props: { owner: string; repo: string }) {
-  const { owner, repo } = props;
+export function VerifyNotFoundPage(props: { owner: string; repo: string; backLink?: boolean }) {
+  const { owner, repo, backLink } = props;
   return (
-    <CertFrame owner={owner} repo={repo} title="GitCert — no attestation found">
+    <CertFrame owner={owner} repo={repo} title="GitCert — no attestation found" backLink={backLink}>
       <div class="px-5 pt-6 pb-7 sm:px-[44px] sm:pt-[34px] sm:pb-10">
         <CardBrand />
         <div class="my-6 h-px bg-hair" />
@@ -267,11 +284,34 @@ export function VerifyNotFoundPage(props: { owner: string; repo: string }) {
   );
 }
 
-/** Shared certificate frame: page shell, request-URL caption, and card. */
-function CertFrame(props: { owner: string; repo: string; title: string; children?: Child }) {
+/**
+ * Shared certificate frame: page shell, request-URL caption, and card. The
+ * single render site for the `← Back to dashboard` link (DRY) — when `backLink`
+ * is set it renders once for ALL verify states above the caption. The link is
+ * always the generic `/dashboard`, never repo/owner/cause-derived, so a
+ * signed-in not-found stays byte-identical across every hidden cause (no
+ * existence oracle). Omitting `backLink` produces byte-identical markup to the
+ * cookie-less cached path.
+ */
+function CertFrame(props: {
+  owner: string;
+  repo: string;
+  title: string;
+  backLink?: boolean;
+  children?: Child;
+}) {
   return (
     <Layout title={props.title}>
       <div class="mx-auto max-w-[680px] px-4 pt-8 pb-16 sm:px-7 sm:pt-[52px] sm:pb-24">
+        {props.backLink ? (
+          <a
+            data-nav
+            href="/dashboard"
+            class="mb-4 inline-flex items-center gap-[6px] pl-[2px] font-mono text-[12.5px] text-muted sm:mb-5"
+          >
+            ← Back to dashboard
+          </a>
+        ) : null}
         <div class="mb-[18px] pl-[2px] font-mono text-[11px] break-all text-muted sm:text-[12px]">
           gitcert.harborstack.app/verify/{props.owner}/{props.repo}
         </div>

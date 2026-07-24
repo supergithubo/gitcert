@@ -55,10 +55,63 @@ const BODY_CLASS = 'text-[15px] leading-[1.65] text-body sm:text-[16px]';
 const MONO_INLINE = 'font-mono text-[12.5px] text-muted';
 const SECTION_RULE = <div class="my-9 h-px bg-hair2 sm:my-12" />;
 
+/**
+ * Scroll-driven active-nav highlight (ported from docs.dc.html lines 346–354,
+ * 371–373). Like VERIFY_SCRIPT / THEME_INIT_SCRIPT this is a CONSTANT string
+ * with ZERO interpolated user data — the only dynamic tokens are the static
+ * section ids `s1`..`s9`, literals baked into the source. No owner/repo/handle
+ * ever enters this script (there is nothing user-controlled on /docs at all).
+ *
+ * One IntersectionObserver (rootMargin '-25% 0px -65% 0px', threshold 0)
+ * watches the nine <section id="sN"> and toggles `data-active` on the desktop
+ * sidebar link whose href is `#sN`; the unlayered app.css rule
+ * `[data-spy-link][data-active]` paints the accent border + ink text.
+ *
+ * Progressive enhancement: the sidebar and mobile jump-list are plain #anchor
+ * links, so with JS disabled (or no IntersectionObserver) they still navigate;
+ * only the scroll-following highlight is absent. The server pre-marks `s1`
+ * active so the first paint matches the JS-disabled landing state.
+ */
+const SCROLLSPY_SCRIPT = `(function () {
+  if (!('IntersectionObserver' in window)) return;
+  var ids = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9'];
+  var links = {};
+  ids.forEach(function (id) {
+    var a = document.querySelector('[data-spy-link][href="#' + id + '"]');
+    if (a) links[id] = a;
+  });
+  var io = new IntersectionObserver(
+    function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        ids.forEach(function (id) {
+          if (!links[id]) return;
+          if (id === en.target.id) links[id].setAttribute('data-active', '');
+          else links[id].removeAttribute('data-active');
+        });
+      });
+    },
+    { rootMargin: '-25% 0px -65% 0px', threshold: 0 }
+  );
+  ids.forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) io.observe(el);
+  });
+})();`;
+
 export function DocsPage(props: DocsPageProps) {
   return (
     <Layout title="GitCert — documentation" account={props.account}>
       <div class="mx-auto max-w-[1120px] px-4 sm:px-7">
+        {props.account !== null ? (
+          <a
+            data-nav
+            href="/dashboard"
+            class="mt-6 inline-flex items-center gap-[6px] font-mono text-[12.5px] text-muted sm:mt-8"
+          >
+            ← Back to dashboard
+          </a>
+        ) : null}
         <div class="lg:grid lg:grid-cols-[216px_1fr] lg:items-start lg:gap-[60px]">
           <Sidebar />
           <main class="min-w-0 max-w-[748px] pt-7 pb-20 sm:pt-16 sm:pb-28">
@@ -84,6 +137,7 @@ export function DocsPage(props: DocsPageProps) {
           </main>
         </div>
       </div>
+      <script>{raw(SCROLLSPY_SCRIPT)}</script>
     </Layout>
   );
 }
@@ -99,6 +153,8 @@ function Sidebar() {
         {NAV_ITEMS.map((it) => (
           <a
             data-nav
+            data-spy-link
+            data-active={it.id === 's1' ? '' : undefined}
             href={`#${it.id}`}
             class="-ml-[2px] flex items-baseline gap-[6px] border-l-2 border-transparent py-[7px] pl-[14px] font-mono text-[12.5px] leading-[1.3] text-muted"
           >
@@ -287,32 +343,49 @@ function SectionBadges() {
         Eight metrics, each available in two styles and three themes. Every sample below is the live
         production SVG — the same markup served to a README.
       </p>
-      <div class="overflow-hidden rounded-[4px] border border-hair-strong bg-card">
-        {/* Desktop column header — the mobile rows label each badge inline. */}
-        <div class="hidden border-b border-hair2 bg-panel2 px-[18px] py-[11px] font-mono text-[10.5px] tracking-[1px] text-muted uppercase sm:flex sm:items-center sm:gap-6">
-          <span class="w-[120px] flex-none">metric</span>
-          <span>flat</span>
-          <span>pill</span>
-        </div>
-        {DOCS_METRIC_ROWS.map((row) => (
-          <div class="flex flex-col gap-[10px] border-b border-hair2 px-4 py-[13px] last:border-b-0 sm:flex-row sm:items-center sm:gap-6 sm:px-[18px]">
-            <span class="font-mono text-[12px] text-soft sm:w-[120px] sm:flex-none sm:text-[12.5px]">
-              {row.name}
+      {/*
+       * s3 badge grid: a base-breakpoint stacked list (each row self-labels
+       * its flat/pill sample) that becomes a CSS TABLE at sm — display:table /
+       * table-row / table-cell with align-middle. The CSS-table (not flex) is
+       * what column-aligns the three columns (metric | flat | pill) across all
+       * eight rows regardless of each badge's intrinsic width; a flex row let
+       * variable flat-badge widths shove the pill column around. The badge SVG
+       * bytes are untouched — this is layout only (docs.dc.html 113–128).
+       */}
+      <div class="overflow-x-auto rounded-[4px] border border-hair-strong bg-card">
+        <div class="sm:table sm:w-full sm:border-collapse">
+          {/* Column header — hidden at base (rows self-label); a table-row at sm. */}
+          <div class="hidden sm:table-row">
+            <span class="border-b border-hair2 bg-panel2 py-[11px] pr-[22px] pl-[18px] font-mono text-[10.5px] tracking-[1px] whitespace-nowrap text-muted uppercase sm:table-cell sm:align-middle">
+              metric
             </span>
-            <span class="flex items-center gap-3">
-              <span class="w-[26px] flex-none font-mono text-[10px] text-muted sm:hidden">
-                flat
-              </span>
-              <span class="inline-flex">{raw(row.flat)}</span>
+            <span class="border-b border-hair2 bg-panel2 px-[22px] py-[11px] font-mono text-[10.5px] tracking-[1px] whitespace-nowrap text-muted uppercase sm:table-cell sm:align-middle">
+              flat
             </span>
-            <span class="flex items-center gap-3">
-              <span class="w-[26px] flex-none font-mono text-[10px] text-muted sm:hidden">
-                pill
-              </span>
-              <span class="inline-flex">{raw(row.pill)}</span>
+            <span class="w-full border-b border-hair2 bg-panel2 px-[18px] py-[11px] font-mono text-[10.5px] tracking-[1px] whitespace-nowrap text-muted uppercase sm:table-cell sm:align-middle">
+              pill
             </span>
           </div>
-        ))}
+          {DOCS_METRIC_ROWS.map((row) => (
+            <div class="flex flex-col gap-[10px] border-b border-hair2 px-4 py-[13px] last:border-b-0 sm:table-row">
+              <span class="font-mono text-[12px] text-soft sm:table-cell sm:border-b sm:border-hair2 sm:py-[13px] sm:pr-[22px] sm:pl-[18px] sm:align-middle sm:text-[12.5px] sm:whitespace-nowrap">
+                {row.name}
+              </span>
+              <span class="flex items-center gap-3 sm:table-cell sm:border-b sm:border-hair2 sm:px-[22px] sm:py-[13px] sm:align-middle sm:whitespace-nowrap">
+                <span class="w-[26px] flex-none font-mono text-[10px] text-muted sm:hidden">
+                  flat
+                </span>
+                <span class="inline-flex">{raw(row.flat)}</span>
+              </span>
+              <span class="flex items-center gap-3 sm:table-cell sm:w-full sm:border-b sm:border-hair2 sm:px-[18px] sm:py-[13px] sm:align-middle sm:whitespace-nowrap">
+                <span class="w-[26px] flex-none font-mono text-[10px] text-muted sm:hidden">
+                  pill
+                </span>
+                <span class="inline-flex">{raw(row.pill)}</span>
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
       <div class="mt-5 grid grid-cols-1 gap-[14px] sm:grid-cols-2">
         <SettingCard title="style">

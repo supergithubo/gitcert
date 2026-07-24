@@ -98,29 +98,46 @@ Server-rendered HTML certificate for humans, e.g.
 `https://gitcert.harborstack.app/verify/johndoe/client-platform`. Linked from
 badges' verified seal.
 
-- **Auth:** none. Public, cacheable, CORS-open.
-- **200** (repo visible, stats row exists) — `Content-Type: text/html; charset=UTF-8`,
-  `Cache-Control: public, max-age=300`. Renders the GitCert header/seal,
-  `# GC-XXXXXX` serial, repository + private/public, owner, all 8 stats
-  rows, the attested timestamp, the signing method, the truncated
-  signature (`ed25519 <first-4>…<last-4>`), and a `[verify]` button — the
-  only client-side script in M2, which fetches `/api/:owner/:repo.json` +
-  `/pubkey` and checks the Ed25519 signature via browser WebCrypto. There
-  is no stale variant on the certificate: the honest attested timestamp
-  already covers staleness.
-- **200 collecting** — repo visible, no stats row yet.
-  `Cache-Control: public, max-age=60`. Renders a "collecting…" placeholder page.
-- **404 not found** — hidden repo (unknown/excluded/removed/suspended —
-  one page and status for all four causes, no existence oracle).
-  `Cache-Control: public, max-age=60` — same short TTL as the collecting
-  case above (not the 200 case's `max-age=300`), so a settings toggle
-  off→on is backstopped by a short client-side re-check even on a purge
-  miss (fix: toggle-cache-purge).
-- No `ETag`/conditional-GET support on this route. Served through
-  `caches.default`, keyed on the full request URL. A settings toggle
-  (either direction) or a manual refresh purges this cache entry
-  directly — see `POST /repos/:id/settings` and `POST /repos/:id/refresh`
-  under "Owner routes" below.
+- **Auth:** none required — session-_aware_, not session-_gated_ (spec
+  overview §Step 6). No ownership check and no owner-scoped D1 join: a
+  signed-in viewer of ANY repo (owned or not) is treated identically.
+- **Cookie-less request** (the overwhelming majority — recruiters/clients)
+  — byte-identical to the pre-session-aware route, in full:
+  - **200** (repo visible, stats row exists) — `Content-Type: text/html; charset=UTF-8`,
+    `Cache-Control: public, max-age=300`. Renders the GitCert header/seal,
+    `# GC-XXXXXX` serial, repository + private/public, owner, all 8 stats
+    rows, the attested timestamp, the signing method, the truncated
+    signature (`ed25519 <first-4>…<last-4>`), and a `[verify]` button — the
+    only client-side script in M2, which fetches `/api/:owner/:repo.json` +
+    `/pubkey` and checks the Ed25519 signature via browser WebCrypto. There
+    is no stale variant on the certificate: the honest attested timestamp
+    already covers staleness.
+  - **200 collecting** — repo visible, no stats row yet.
+    `Cache-Control: public, max-age=60`. Renders a "collecting…" placeholder page.
+  - **404 not found** — hidden repo (unknown/excluded/removed/suspended —
+    one page and status for all four causes, no existence oracle).
+    `Cache-Control: public, max-age=60` — same short TTL as the collecting
+    case above (not the 200 case's `max-age=300`), so a settings toggle
+    off→on is backstopped by a short client-side re-check even on a purge
+    miss (fix: toggle-cache-purge).
+  - No `ETag`/conditional-GET support on this route. Served through
+    `caches.default`, keyed on the full request URL — the cookie check runs
+    strictly before this lookup, so a personalized variant can never
+    populate or be served from it. A settings toggle (either direction) or
+    a manual refresh purges this cache entry directly — see
+    `POST /repos/:id/settings` and `POST /repos/:id/refresh` under
+    "Owner routes" below.
+- **`gc_session` cookie present** — `caches.default` is never touched, valid
+  session or not:
+  - **Valid session** — same page/status/branching as above, plus a generic
+    `← Back to dashboard` → `/dashboard` link (rendered once in the shared
+    `CertFrame`, identical across all three states and — critically — across
+    all four hidden causes, so it leaks nothing). `Cache-Control: no-store`
+    overrides the per-state tier; never cached.
+  - **Invalid/expired session** — renders the same cookie-less markup (no
+    back-link) with `Cache-Control: no-store` and a `Set-Cookie` clearing
+    `gc_session` (`Max-Age=0`), so the client falls back onto the cacheable
+    cookie-less path next request.
 
 ## `GET /pubkey`
 
