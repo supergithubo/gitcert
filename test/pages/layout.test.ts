@@ -155,15 +155,19 @@ describe('Layout footer', () => {
 });
 
 describe('Layout nav restructure (third export)', () => {
-  it('adds a Documentation link to /docs, reusing the retired GitHub link treatment', () => {
+  it('adds a Documentation link to /docs, centered and muted (aligned with account menu + toggle)', () => {
     const header = nav(render());
     const at = header.indexOf('href="/docs"');
     expect(at).toBeGreaterThan(-1);
     const open = header.slice(header.lastIndexOf('<a', at), header.indexOf('>', at));
     expect(open).toContain('data-nav');
     expect(open).toContain('text-muted');
-    expect(open).toContain('border-b-2');
-    expect(open).toContain('border-transparent');
+    // Plain centered flex item — no vertical-offset scaffolding (mt-/pb-/border-b)
+    // that pushed it 3px below the account menu + theme toggle. items-center only.
+    expect(open).toContain('items-center');
+    expect(open).not.toContain('border-b-2');
+    expect(open).not.toContain('mt-[6px]');
+    expect(open).not.toContain('pb-[6px]');
     // Accent discipline (decision 10c): nav links stay muted — never accent.
     expect(open).not.toContain('accent');
     expect(header).toContain('>Documentation</a>');

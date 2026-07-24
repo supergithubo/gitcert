@@ -105,14 +105,14 @@ function Nav(props: { account: Account | null }) {
           <span class="font-mono text-[16px] font-semibold tracking-[-0.4px]">GitCert</span>
         </a>
         <div class="flex items-center gap-[18px] sm:gap-[22px]">
-          {/* "Documentation" reuses the treatment of the retired header GitHub
-              link (data-nav, text-muted, transparent 2px underline). Accent
-              discipline (design decision 10c) keeps nav links ink/muted, so
-              this link is NOT accent-underlined even on /docs itself. */}
+          {/* data-nav + text-muted per accent discipline (decision 10c) — nav
+              links stay ink/muted, no accent underline even on /docs itself.
+              Plain centered flex item so it aligns with the account menu and
+              theme toggle (no vertical-offset scaffolding). */}
           <a
             data-nav
             href="/docs"
-            class="mt-[6px] inline-flex items-center border-b-2 border-transparent pb-[6px] font-mono text-[13px] tracking-[0.2px] text-muted"
+            class="inline-flex items-center font-mono text-[13px] tracking-[0.2px] text-muted"
           >
             Documentation
           </a>
