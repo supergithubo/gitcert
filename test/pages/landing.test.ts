@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { LandingPage, type LandingPageProps } from '../../src/pages/landing';
 
-function render(auth: LandingPageProps['auth']): string {
-  return String(LandingPage({ auth }));
+function render(auth: LandingPageProps['auth'], signedOut?: boolean): string {
+  return String(LandingPage({ auth, signedOut }));
+}
+
+/** Signed-in auth fixture — handle feeds the shared account menu. */
+function authed(attestedCount: number): LandingPageProps['auth'] {
+  return { attestedCount, handle: 'octocat' };
 }
 
 function count(html: string, needle: string): number {
@@ -10,13 +15,37 @@ function count(html: string, needle: string): number {
 }
 
 describe('LandingPage (unauth)', () => {
-  it('renders the signed-out CTA to /auth/login with its microcopy', () => {
+  it('renders the signed-out CTA to /auth/login relabelled "Install App"', () => {
     const html = render(null);
-    expect(html).toContain('Connect GitHub');
+    // Decision 3-REV: the label is "Install App"; the install flow is unchanged.
+    expect(html).toContain('Install App');
     expect(html).toContain('href="/auth/login"');
-    expect(html).toContain('read-only · installs in ~15s');
+    expect(html).not.toContain('Connect GitHub');
+    // The old microcopy is gone, replaced by the sample-cert link (below).
+    expect(html).not.toContain('read-only · installs in ~15s');
     expect(html).not.toContain('Go to Dashboard');
     expect(html).not.toContain('repos attested');
+  });
+
+  it('replaces the CTA microcopy with an accent "View sample certificate ↗" link (Decision A)', () => {
+    const html = render(null);
+    const at = html.indexOf('View sample certificate ↗');
+    expect(at).toBeGreaterThan(-1);
+    const open = html.slice(html.lastIndexOf('<a', at), html.indexOf('>', at));
+    // Same-origin link to a real, publicly-attested certificate.
+    expect(open).toContain('href="/verify/supergithubo/wnston.dev"');
+    // Accent is permitted here by decision 10c ("the mock renders it accent").
+    expect(open).toContain('text-accent');
+    expect(open).toContain('target="_blank"');
+    expect(open).toContain('rel="noopener"');
+  });
+
+  it('renders the refreshed hero blurb', () => {
+    const html = render(null);
+    expect(html).toContain(
+      'Help clients and recruiters trust your experience with cryptographically verifiable',
+    );
+    expect(html).toContain('without exposing your source code');
   });
 
   it('renders all 10 demo badges via the production templates', () => {
@@ -72,10 +101,14 @@ describe('LandingPage (unauth)', () => {
     const html = render(null);
     expect(html).toContain('johndoe/client-platform');
     expect(html).toContain('&lt;yoursite&gt;.io');
-    // Anonymization covers the MOCK DATA only — the footer's "Built by
-    // wnston.dev" credit is intentional real identity (user decision,
-    // UI polish batch). Nothing outside the footer may leak it.
-    const beforeFooter = html.slice(0, html.indexOf('<footer'));
+    // Anonymization covers the MOCK DATA only. Two real-identity references
+    // are intentional and allowed: the footer's "Built by wnston.dev" credit,
+    // and the "View sample certificate ↗" target (Decision A — a real, public
+    // certificate at /verify/supergithubo/wnston.dev). Remove the sample-cert
+    // href, then assert nothing else before the footer leaks the owner.
+    const beforeFooter = html
+      .slice(0, html.indexOf('<footer'))
+      .replace('/verify/supergithubo/wnston.dev', '');
     expect(beforeFooter).not.toContain('wnston');
   });
 
@@ -87,34 +120,81 @@ describe('LandingPage (unauth)', () => {
 
 describe('LandingPage (auth)', () => {
   it('renders the signed-in CTA to /dashboard with the attested count', () => {
-    const html = render({ attestedCount: 2 });
+    const html = render(authed(2));
     expect(html).toContain('Go to Dashboard');
     expect(html).toContain('href="/dashboard"');
     expect(html).toContain('signed in · 2 repos attested');
-    expect(html).not.toContain('Connect GitHub');
+    expect(html).not.toContain('Install App');
     expect(html).not.toContain('installs in ~15s');
   });
 
   it('pluralizes the microcopy at the edges', () => {
-    expect(render({ attestedCount: 0 })).toContain('signed in · 0 repos attested');
-    const one = render({ attestedCount: 1 });
+    expect(render(authed(0))).toContain('signed in · 0 repos attested');
+    const one = render(authed(1));
     expect(one).toContain('signed in · 1 repo attested');
     expect(one).not.toContain('1 repos');
   });
 
+  it('threads the handle into the shared account menu', () => {
+    const html = render(authed(2));
+    expect(html).toContain('data-account-menu');
+    expect(html).toContain('@octocat');
+    expect(html).toContain('signed in via GitHub');
+  });
+
   it('renders the same demo badges as the signed-out variant', () => {
-    const html = render({ attestedCount: 2 });
+    const html = render(authed(2));
     expect(count(html, 'role="img"')).toBe(10);
   });
 });
 
+describe('LandingPage signed-out band (Decision B)', () => {
+  it('renders only when the signedOut flag is set', () => {
+    expect(render(null)).not.toContain('badges keep resolving');
+    const html = render(null, true);
+    expect(html).toContain('Signed out of GitCert. Your repo access is untouched');
+    expect(html).toContain('badges keep resolving');
+  });
+
+  it('dismisses via a plain link back to / (no JS, no cache poisoning)', () => {
+    const html = render(null, true);
+    const at = html.indexOf('aria-label="dismiss"');
+    expect(at).toBeGreaterThan(-1);
+    const open = html.slice(html.lastIndexOf('<a', at), html.indexOf('>', at));
+    expect(open).toContain('href="/"');
+  });
+});
+
+/**
+ * Same decision #5 honesty guard as docs.test.ts BANNED_COPY — kept in sync.
+ * Catches the CLASS of metadata-only / source-unreadability claims, not just
+ * the exact old strings. Landing copy is compliant: read-only = never writes,
+ * "keeps only aggregates" is the storage frame, and the trust strip says
+ * "audit exactly which fields are read".
+ */
+const BANNED_COPY = [
+  'metadata-only',
+  'metadata only',
+  'never read your source',
+  'can never read',
+  "can't read your source",
+  'cannot read your source',
+  'never your source',
+  'counts and dates only',
+  'only counts and',
+  'reads only',
+  'sees only',
+  'only sees',
+] as const;
+
 describe('LandingPage copy rule (decision #5)', () => {
-  it.each([null, { attestedCount: 2 }] as const)(
+  it.each([null, authed(2)] as const)(
     'never claims metadata-only or source unreadability (auth: %o)',
     (auth) => {
-      const html = render(auth);
-      expect(html).not.toContain('metadata-only');
-      expect(html).not.toContain('never read your source');
+      const html = render(auth).toLowerCase();
+      for (const phrase of BANNED_COPY) {
+        expect(html, `decision #5 violation: "${phrase}"`).not.toContain(phrase);
+      }
     },
   );
 
@@ -127,7 +207,7 @@ describe('LandingPage copy rule (decision #5)', () => {
 
 describe('LandingPage accent discipline (mock authority)', () => {
   it('renders both CTAs as ink buttons with paper text, never accent', () => {
-    for (const auth of [null, { attestedCount: 2 }] as const) {
+    for (const auth of [null, authed(2)] as const) {
       const html = render(auth);
       // First match is now the nav wordmark link (href="/", ink text, not a
       // button); the hero CTA is the last internal data-nav anchor on the page.
@@ -154,14 +234,6 @@ describe('LandingPage accent discipline (mock authority)', () => {
       expect(cls).toContain('hover:text-accent');
     }
   });
-
-  it('keeps the nav GitHub link muted (mock: color var(--muted))', () => {
-    const html = render(null);
-    const openTag = html.slice(
-      html.indexOf('data-nav="true" href="https://github.com/supergithubo/gitcert"'),
-    );
-    expect(openTag.slice(0, openTag.indexOf('>'))).toContain('text-muted');
-  });
 });
 
 describe('Layout theme toggle (restored from the mocks)', () => {
@@ -180,9 +252,11 @@ describe('Layout theme toggle (restored from the mocks)', () => {
     expect(html).toContain('aria-label="toggle theme"');
     expect(html).toContain('data-theme-icon="sun"');
     expect(html).toContain('data-theme-icon="moon"');
-    // Mock moon path, and the toggle sits after the GitHub link.
+    // Mock moon path; the toggle sits far right — after the Documentation
+    // nav link (the header GitHub link moved to the footer this cycle).
     expect(html).toContain('M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z');
-    expect(html.indexOf('View on GitHub')).toBeLessThan(html.indexOf('gc-theme-toggle'));
+    const header = html.slice(0, html.indexOf('<div class="flex-1">'));
+    expect(header.indexOf('>Documentation</a>')).toBeLessThan(header.indexOf('gc-theme-toggle'));
   });
 
   it('wires the toggle to data-gc-theme on <html> with localStorage persistence', () => {
@@ -225,11 +299,6 @@ describe('Layout responsive shell (mobile spec)', () => {
     const html = render(null);
     expect(html).toContain('name="viewport" content="width=device-width, initial-scale=1"');
   });
-
-  it('hides the GitHub nav label below sm while the icon stays', () => {
-    const html = render(null);
-    expect(html).toContain('<span class="hidden sm:inline">View on GitHub</span>');
-  });
 });
 
 describe('LandingPage brand', () => {
@@ -244,7 +313,7 @@ describe('LandingPage brand', () => {
 
 describe('LandingPage footer (shared shell)', () => {
   it('renders the build-constant footer on both cache variants', () => {
-    for (const auth of [null, { attestedCount: 2 }] as const) {
+    for (const auth of [null, authed(2)] as const) {
       const html = render(auth);
       expect(html).toContain('<footer');
       expect(html).toContain('· Built by ');

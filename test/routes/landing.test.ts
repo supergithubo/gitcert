@@ -35,7 +35,7 @@ describe('GET /', () => {
     expect(first.headers.get('Cache-Control')).toBe('public, max-age=300');
     expect(first.headers.get('Access-Control-Allow-Origin')).toBe('*');
     const html = await first.text();
-    expect(html).toContain('Connect GitHub');
+    expect(html).toContain('Install App');
     expect(html).toContain('href="/auth/login"');
 
     // Second cookie-less request is served straight from caches.default —
@@ -104,12 +104,37 @@ describe('GET /', () => {
     const html = await response.text();
     expect(html).toContain('Go to Dashboard');
     expect(html).toContain('signed in · 2 repos attested');
+    // The signed-in session's login feeds the shared account menu.
+    expect(html).toContain('data-account-menu');
+    expect(html).toContain('@wnston');
 
     // A cookied request must never be served from, or populate, the shared
     // cache (architectures/edge-cache CRITICAL — no personalized leak).
     const cache = caches.default;
     const cached = await cache.match(new Request(url));
     expect(cached).toBeUndefined();
+  });
+
+  it('renders the signed-out ack band for ?signed_out=1 as a distinct cache key, base "/" unaffected (Decision B)', async () => {
+    // Populate the base `/` cache entry first.
+    const base = await SELF.fetch(`${ORIGIN}/`);
+    expect(await base.text()).not.toContain('Signed out of GitCert');
+
+    const signedOutResponse = await SELF.fetch(`${ORIGIN}/?signed_out=1`);
+    expect(signedOutResponse.status).toBe(200);
+    expect(signedOutResponse.headers.get('Cache-Control')).toBe('public, max-age=300');
+    const signedOutHtml = await signedOutResponse.text();
+    expect(signedOutHtml).toContain('Signed out of GitCert');
+
+    // The base `/` cache entry (no query string) was never mutated.
+    const cache = caches.default;
+    const baseCached = await cache.match(new Request(`${ORIGIN}/`));
+    expect(baseCached).toBeDefined();
+    expect(await baseCached!.clone().text()).not.toContain('Signed out of GitCert');
+
+    // `/?signed_out=1` is itself a distinct, independently cacheable entry.
+    const signedOutCached = await cache.match(new Request(`${ORIGIN}/?signed_out=1`));
+    expect(signedOutCached).toBeDefined();
   });
 
   it('renders the unauth variant with a clear-cookie for an invalid/garbage session (permission boundary)', async () => {
@@ -119,7 +144,7 @@ describe('GET /', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     const html = await response.text();
-    expect(html).toContain('Connect GitHub');
+    expect(html).toContain('Install App');
     expect(html).not.toContain('repos attested');
 
     // The forged claim renders only public content — this IS the

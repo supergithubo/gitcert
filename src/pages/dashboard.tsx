@@ -312,7 +312,7 @@ const DASHBOARD_SCRIPT = `(function () {
 export function DashboardPage(props: DashboardPageProps) {
   const { login, repos, lastSyncAt } = props;
   return (
-    <Layout title="GitCert — dashboard">
+    <Layout title="GitCert — dashboard" account={{ handle: login }}>
       <div class="mx-auto max-w-[1120px] px-4 pt-8 pb-16 sm:px-7 sm:pt-[52px] sm:pb-24">
         <div class="font-mono text-[11px] tracking-[2px] text-muted uppercase">
           Dashboard · @{login}

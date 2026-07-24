@@ -1,9 +1,12 @@
 /**
  * Auth pages (M3 spec §Frozen Interface): AuthErrorPage renders generic
- * failure copy (SEC-007 — no internals leaked) with a retry link;
- * SignedOutPage confirms logout. No dashboard mock covers these — kept
- * minimal, composed from Layout, existing tokens only (structure mirrors
- * the verify not-found centered card). Pure components: no D1/env/fetch.
+ * failure copy (SEC-007 — no internals leaked) with a retry link. No
+ * dashboard mock covers this — kept minimal, composed from Layout, existing
+ * tokens only (structure mirrors the verify not-found centered card). Pure
+ * component: no D1/env/fetch.
+ *
+ * SignedOutPage was retired in the third-export cycle: logout now 302s to the
+ * signed-out landing (`/?signed_out=1`), which is the only signed-out surface.
  */
 
 import { raw } from 'hono/html';
@@ -20,19 +23,6 @@ export function AuthErrorPage() {
       <div class="mt-[14px] font-mono text-[12px] text-muted">
         <a data-nav href="/auth/login" class="text-accent">
           try again
-        </a>
-      </div>
-    </AuthFrame>
-  );
-}
-
-export function SignedOutPage() {
-  return (
-    <AuthFrame title="GitCert — signed out">
-      <div class="font-mono text-[14px] tracking-[-0.1px] text-soft">You&apos;re signed out.</div>
-      <div class="mt-[14px] font-mono text-[12px] text-muted">
-        <a data-nav href="/auth/login" class="text-accent">
-          sign in
         </a>
       </div>
     </AuthFrame>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AuthErrorPage, SignedOutPage } from '../../src/pages/auth';
+import { AuthErrorPage } from '../../src/pages/auth';
 
 function render(node: unknown): string {
   return String(node);
@@ -24,39 +24,25 @@ describe('AuthErrorPage', () => {
   });
 });
 
-describe('Auth pages responsive card (verify-certificate parity)', () => {
-  it.each([
-    ['AuthErrorPage', AuthErrorPage],
-    ['SignedOutPage', SignedOutPage],
-  ])('%s takes the CertFrame responsive deltas', (_name, page) => {
-    const html = render(page());
+describe('AuthErrorPage responsive card (verify-certificate parity)', () => {
+  it('takes the CertFrame responsive deltas', () => {
+    const html = render(AuthErrorPage());
     expect(html).toContain('px-4 pt-8 pb-16 sm:px-7 sm:pt-[52px] sm:pb-24');
     expect(html).toContain('px-5 pt-6 pb-7 sm:px-[44px] sm:pt-[34px] sm:pb-10');
   });
 });
 
-describe('SignedOutPage', () => {
-  it('renders sign-out confirmation with a sign-in link to /auth/login', () => {
-    const html = render(SignedOutPage());
-    expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('signed out');
-    expect(html).toContain('href="/auth/login"');
-    expect(html).toContain('sign in');
-  });
-
-  it('carries no session or user data (static confirmation page)', () => {
-    const html = render(SignedOutPage());
-    expect(html).not.toContain('gc_session');
-    expect(html).not.toContain('@');
+describe('SignedOutPage retirement (third export)', () => {
+  it('is no longer exported — logout 302s to the signed-out landing instead', async () => {
+    const mod = await import('../../src/pages/auth');
+    expect('SignedOutPage' in mod).toBe(false);
   });
 });
 
 describe('Auth pages footer (shared shell)', () => {
-  it('renders the site footer on both auth pages', () => {
-    for (const page of [AuthErrorPage(), SignedOutPage()]) {
-      const html = render(page);
-      expect(html).toContain('<footer');
-      expect(html).toContain('· Built by ');
-    }
+  it('renders the site footer on the auth page', () => {
+    const html = render(AuthErrorPage());
+    expect(html).toContain('<footer');
+    expect(html).toContain('· Built by ');
   });
 });

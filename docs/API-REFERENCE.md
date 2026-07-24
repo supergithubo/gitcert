@@ -9,8 +9,11 @@ surfaces — badge SVGs, signed JSON, the verify certificate, the public
 key endpoint, and the health probe. M3 adds the owner surfaces below —
 OAuth login/session, the dashboard, and the owner mutations
 (`/repos/:id/settings`, `/repos/:id/refresh`). M4 adds the landing page
-(`GET /`, below). The shadcn registry (`/r/*`) still lands in a later
-milestone per `SPEC.md` §12.
+(`GET /`, below). A later cycle adds the public docs page (`GET /docs`)
+and threads the signed-in `login` into a shared account menu across
+`/`, `/docs`, and `/dashboard`; `POST /auth/logout` now redirects to
+`/?signed_out=1` instead of rendering its own page. The shadcn registry
+(`/r/*`) still lands in a later milestone per `SPEC.md` §12.
 
 Every route below is a `GET`. No handler calls GitHub in the request
 path — each is one D1 read (`selectPublicRepoState` / `selectOldestCollectedAt`)
@@ -191,21 +194,28 @@ happens **before** any `caches.default` lookup, so the shared, URL-keyed
 cache can only ever see cookie-less requests and can never leak a
 personalized variant (architectures/edge-cache).
 
-- **No `gc_session` cookie** — the signed-out variant (demo badges, a
-  "Connect GitHub" CTA to `/auth/login`). `200`, `Content-Type: text/html;
+- **No `gc_session` cookie** — the signed-out variant (demo badges, an
+  "Install App" CTA to `/auth/login`). `200`, `Content-Type: text/html;
 charset=UTF-8`, `Cache-Control: public, max-age=300`,
   `Access-Control-Allow-Origin: *`. Served through `caches.default`, keyed
   on the full request URL, same as the other public GETs above — this is
   the only branch that ever touches the shared cache. Zero I/O beyond the
   cache lookup: a pure template render, no D1 read, no GitHub call.
+  - `?signed_out=1` (set by `POST /auth/logout`'s redirect) renders a
+    post-logout acknowledgment band above the hero, reassuring that
+    signing out did not touch repo access. This query string is a cache
+    key **distinct** from the base `/` — `edgeCache` keys on the full
+    request URL, so the band is never a per-request mutation of the base
+    cached page. Dismiss is a plain `<a href="/">`, no JS.
 - **`gc_session` cookie present** — `caches.default` is never consulted or
   populated, regardless of whether the cookie verifies. Always
   `Cache-Control: no-store`, no CORS header (owner-surface parity with
   `/dashboard`):
   - **Valid session** — one D1 read (`countAttestedRepos`, scoped to the
     session's `github_id`) → the signed-in variant (a "Go to Dashboard"
-    CTA to `/dashboard`, pluralized `N repos attested` microcopy). The
-    count is truthful: only repos that are `included = 1`, non-removed, on
+    CTA to `/dashboard`, pluralized `N repos attested` microcopy, and the
+    shared account menu fed by the session's `login`).
+    The count is truthful: only repos that are `included = 1`, non-removed, on
     a live (non-suspended) installation, **and** already have a stored
     stats row count — a just-installed, not-yet-collected repo does not
     inflate the number.
@@ -216,6 +226,28 @@ charset=UTF-8`, `Cache-Control: public, max-age=300`,
     path. A forged or expired claim renders only public content — no
     error, no detail leaked.
 - No GitHub call anywhere in this route.
+
+## `GET /docs`
+
+The public documentation page, e.g. `https://gitcert.harborstack.app/docs`.
+Mirrors `GET /`'s cookie-first pattern verbatim — the cookie check runs
+**before** any `caches.default` lookup, so only cookie-less requests ever
+consult or populate the shared cache (architectures/edge-cache). The docs
+body itself is identical in every branch; only the shared Nav's account
+menu differs.
+
+- **No `gc_session` cookie** — signed-out nav. `200`, `Content-Type:
+text/html; charset=UTF-8`, `Cache-Control: public, max-age=300`,
+  `Access-Control-Allow-Origin: *`. Served through `caches.default`, keyed
+  on the full request URL. Zero I/O beyond the cache lookup.
+- **`gc_session` cookie present** — `caches.default` is never consulted or
+  populated, regardless of whether the cookie verifies. Always
+  `Cache-Control: no-store`, no CORS header:
+  - **Valid session** — the account menu renders, fed by the session's
+    `login`. No D1 read.
+  - **Invalid/expired session** — signed-out nav rendered, plus
+    `Set-Cookie: gc_session=...; Max-Age=0` clearing the stale cookie.
+- No GitHub call, no D1 read anywhere in this route.
 
 ## Owner routes (M3)
 
@@ -301,9 +333,11 @@ no stored token).
 ### `POST /auth/logout`
 
 - No session required (idempotent). Clears `gc_session` (`Max-Age=0`).
-- `200`, a minimal signed-out confirmation page. No nav links to this
-  route exist yet (binding design mock has none) — it's reachable only by
-  direct request.
+- `302` to `/?signed_out=1` (the signed-out landing page's acknowledgment
+  band — see `GET /`), `Cache-Control: no-store`. The dedicated
+  `SignedOutPage` surface is retired; the signed-out landing is now the
+  only signed-out surface. Reachable from the shared account menu's
+  "Sign out" form.
 
 ### `GET /dashboard`
 

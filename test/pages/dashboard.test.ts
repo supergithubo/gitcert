@@ -49,6 +49,16 @@ describe('DashboardPage — header and repo list', () => {
     expect(html).toContain('· Built by ');
   });
 
+  it('wires the signed-in account menu into the nav (handle threaded to Layout)', () => {
+    // dashboard.tsx passes account={{ handle: login }} — the one line that
+    // surfaces sign-out on the dashboard. Assert it actually reaches the nav.
+    const html = render(DashboardPage(fixtureProps({ login: 'wnston' })));
+    expect(html).toContain('data-account-menu');
+    expect(html).toContain('@wnston');
+    // Sign-out is a POST form to /auth/logout (state-changing, not a link).
+    expect(html).toContain('/auth/logout');
+  });
+
   it('renders every repo row with owner/name and private/public tags', () => {
     const html = render(DashboardPage(fixtureProps()));
     expect(html).toContain('wnston/client-platform');

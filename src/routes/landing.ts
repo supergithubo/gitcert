@@ -18,8 +18,8 @@ import { LandingPage } from '../pages/landing';
  */
 export const landing = new Hono<{ Bindings: Env }>();
 
-async function renderUnauthResponse(): Promise<Response> {
-  const html = await LandingPage({ auth: null });
+async function renderUnauthResponse(signedOut: boolean): Promise<Response> {
+  const html = await LandingPage({ auth: null, signedOut });
   return new Response(html, {
     status: 200,
     headers: {
@@ -32,9 +32,14 @@ async function renderUnauthResponse(): Promise<Response> {
 
 landing.get('/', async (c) => {
   const cookieValue = getCookie(c, SESSION_COOKIE_NAME);
+  // Decision B: `?signed_out=1` renders the post-logout ack band. `edgeCache`
+  // keys on the full request URL, so `/?signed_out=1` is a cache entry
+  // DISTINCT from the base `/` — this never mutates the base cached page,
+  // cookie-less or not.
+  const signedOut = c.req.query('signed_out') === '1';
 
   if (!cookieValue) {
-    return edgeCache(c.req.raw, c.executionCtx, renderUnauthResponse);
+    return edgeCache(c.req.raw, c.executionCtx, () => renderUnauthResponse(signedOut));
   }
 
   // Cookie present: NEVER touch caches.default from here on, valid or not.
@@ -47,7 +52,7 @@ landing.get('/', async (c) => {
     // Every header — including Set-Cookie — is set directly on this one
     // hand-built Response; nothing is buffered via `c.header()` first, so
     // there is nothing for Hono to drop (reviewer finding V-001).
-    const html = await LandingPage({ auth: null });
+    const html = await LandingPage({ auth: null, signedOut });
     return new Response(html, {
       status: 200,
       headers: {
@@ -59,7 +64,9 @@ landing.get('/', async (c) => {
   }
 
   const attestedCount = await countAttestedRepos(c.env.DB, session.githubId);
-  const html = await LandingPage({ auth: { attestedCount } });
+  const html = await LandingPage({
+    auth: { attestedCount, handle: session.login },
+  });
   return new Response(html, {
     status: 200,
     headers: {

@@ -160,6 +160,28 @@
   display: none;
 }
 
+/*
+ * Pure-CSS <details> disclosures: the nav account menu (layout.tsx
+ * AccountMenu) and the docs mobile jump-list (docs.tsx JumpList). Strip the
+ * native summary marker so the "Account ▾" / "On this page ▾" triggers read
+ * cleanly, and rotate the caret when open. No JS: the user handle never
+ * enters a script.
+ */
+[data-account-menu] > summary,
+[data-jumplist] > summary {
+  list-style: none;
+}
+
+[data-account-menu] > summary::-webkit-details-marker,
+[data-jumplist] > summary::-webkit-details-marker {
+  display: none;
+}
+
+[data-account-menu][open] [data-account-caret],
+[data-jumplist][open] [data-account-caret] {
+  transform: rotate(180deg);
+}
+
 @theme inline {
   --color-paper: var(--paper);
   --color-ink: var(--ink);

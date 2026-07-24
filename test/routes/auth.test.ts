@@ -382,10 +382,14 @@ describe('GET /auth/callback', () => {
 });
 
 describe('POST /auth/logout', () => {
-  it('clears the session cookie and renders the signed-out page (happy path, no session required)', async () => {
-    const response = await SELF.fetch(`${ORIGIN}/auth/logout`, { method: 'POST' });
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Type')).toBe('text/html; charset=UTF-8');
+  it('clears the session cookie and redirects to the signed-out landing (happy path, no session required)', async () => {
+    const response = await SELF.fetch(`${ORIGIN}/auth/logout`, {
+      method: 'POST',
+      redirect: 'manual',
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/?signed_out=1');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     const sessionCookie = findSetCookie(response, 'gc_session');
     expect(sessionCookie).toContain('Max-Age=0');
   });

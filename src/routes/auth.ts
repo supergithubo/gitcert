@@ -11,7 +11,7 @@ import {
   createStateCookie,
   verifyState,
 } from '../lib/session';
-import { AuthErrorPage, SignedOutPage } from '../pages/auth';
+import { AuthErrorPage } from '../pages/auth';
 
 /**
  * `GET /auth/login`, `GET /auth/callback`, `POST /auth/logout` (spec
@@ -178,12 +178,18 @@ auth.get('/auth/callback', async (c) => {
   return c.redirect('/dashboard', 302);
 });
 
-auth.post('/auth/logout', async (c) => {
-  const html = await SignedOutPage();
-  return new Response(html, {
-    status: 200,
+auth.post('/auth/logout', (c) => {
+  // Signed-out landing is now the only signed-out surface (spec overview
+  // §Step 9 — `SignedOutPage` is retired). Redirect to `/?signed_out=1`, a
+  // cache key DISTINCT from the base `/` (Decision B) so the ack band is
+  // never a per-request mutation of the shared cached page. Every header —
+  // including Location and Set-Cookie — is set directly on this one
+  // hand-built Response; nothing is buffered via `c.header()` first, so
+  // there is nothing for Hono to drop (reviewer finding V-001).
+  return new Response(null, {
+    status: 302,
     headers: {
-      'Content-Type': 'text/html; charset=UTF-8',
+      Location: '/?signed_out=1',
       'Cache-Control': 'no-store',
       'Set-Cookie': clearSessionCookie(),
     },

@@ -8,10 +8,19 @@ import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { version as pkgVersion } from '../../package.json';
 import { sealSvg } from '../../src/badges/seal';
-import { GITHUB_REPO_URL, Layout } from '../../src/pages/layout';
+import { GITHUB_MARK_PATH, GITHUB_REPO_URL, Layout, initials } from '../../src/pages/layout';
 
 function render(): string {
   return String(Layout({ title: 'GitCert — test', children: 'page-body-marker' }));
+}
+
+function renderWithAccount(handle: string): string {
+  return String(Layout({ title: 'GitCert — test', account: { handle }, children: 'page-body' }));
+}
+
+/** The header only (nav), sliced off before the page body / footer. */
+function nav(html: string): string {
+  return html.slice(0, html.indexOf('<div class="flex-1">'));
 }
 
 describe('Layout nav wordmark', () => {
@@ -133,5 +142,104 @@ describe('Layout footer', () => {
     const html = render();
     expect(html).toContain('flex min-h-screen flex-col');
     expect(html).toContain('<div class="flex-1">');
+  });
+
+  it('carries the GitHub mark on the footer View-on-GitHub link (moved from the header)', () => {
+    const html = render();
+    const footer = html.slice(html.indexOf('<footer'), html.indexOf('</footer>'));
+    // The anchor that reads "View on GitHub" now wraps the octocat path.
+    const anchor = footer.slice(footer.indexOf('href="' + GITHUB_REPO_URL));
+    const anchorEnd = anchor.indexOf('</a>');
+    expect(anchor.slice(0, anchorEnd)).toContain(GITHUB_MARK_PATH);
+  });
+});
+
+describe('Layout nav restructure (third export)', () => {
+  it('adds a Documentation link to /docs, reusing the retired GitHub link treatment', () => {
+    const header = nav(render());
+    const at = header.indexOf('href="/docs"');
+    expect(at).toBeGreaterThan(-1);
+    const open = header.slice(header.lastIndexOf('<a', at), header.indexOf('>', at));
+    expect(open).toContain('data-nav');
+    expect(open).toContain('text-muted');
+    expect(open).toContain('border-b-2');
+    expect(open).toContain('border-transparent');
+    // Accent discipline (decision 10c): nav links stay muted — never accent.
+    expect(open).not.toContain('accent');
+    expect(header).toContain('>Documentation</a>');
+  });
+
+  it('removes "View on GitHub" from the header (it lives in the footer now)', () => {
+    const header = nav(render());
+    expect(header).not.toContain('View on GitHub');
+    expect(header).not.toContain(GITHUB_REPO_URL);
+  });
+
+  it('renders the signed-out nav with no account menu', () => {
+    const header = nav(render());
+    expect(header).not.toContain('data-account-menu');
+    expect(header).not.toContain('signed in via GitHub');
+    expect(header).not.toContain('/auth/logout');
+  });
+});
+
+describe('Layout account menu (signed-in)', () => {
+  it('renders the account menu only when an account is supplied', () => {
+    expect(render()).not.toContain('data-account-menu');
+    expect(renderWithAccount('octocat')).toContain('data-account-menu');
+  });
+
+  it('shows the @handle, server-side initials, and "signed in via GitHub"', () => {
+    const html = renderWithAccount('octocat');
+    expect(html).toContain('@octocat');
+    expect(html).toContain('signed in via GitHub');
+    // Initials computed server-side (mock's client JS not ported).
+    expect(html).toContain('>oc</span>');
+  });
+
+  it('signs out via a POST form to /auth/logout (a button, not a link)', () => {
+    const html = renderWithAccount('octocat');
+    expect(html).toMatch(/<form method="post" action="\/auth\/logout"[^>]*>/);
+    expect(html).toContain('Sign out');
+    expect(html).toContain('type="submit"');
+  });
+
+  it('offers a subordinate external Disconnect link to GitHub app settings', () => {
+    const html = renderWithAccount('octocat');
+    const at = html.indexOf('href="https://github.com/settings/installations"');
+    expect(at).toBeGreaterThan(-1);
+    const open = html.slice(html.lastIndexOf('<a', at), html.indexOf('>', at));
+    expect(open).toContain('target="_blank"');
+    expect(open).toContain('rel="noopener"');
+    expect(open).toContain('text-muted');
+    expect(html).toContain('Disconnect GitCert from GitHub');
+    expect(html).toContain('your badges stop resolving');
+  });
+
+  it('is a pure-CSS disclosure — the handle never enters any inline script', () => {
+    const html = renderWithAccount('octocat');
+    expect(html).toContain('<details data-account-menu');
+    expect(html).toContain('<summary');
+    const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+    for (const s of scripts) expect(s).not.toContain('octocat');
+  });
+
+  it('has the account-menu utilities and caret rule in the compiled stylesheet', () => {
+    const css = env.TEST_COMPILED_CSS;
+    expect(css, 'run npm run build:css').toContain('.w-\\[276px\\]');
+    expect(css).toContain('[data-account-menu][open]');
+  });
+});
+
+describe('initials()', () => {
+  it('takes the first two alphanumerics, lowercased', () => {
+    expect(initials('Octocat')).toBe('oc');
+    expect(initials('John-Doe')).toBe('jo');
+    expect(initials('9lives')).toBe('9l');
+  });
+
+  it('falls back to gh when a handle has no alphanumerics', () => {
+    expect(initials('')).toBe('gh');
+    expect(initials('__@!')).toBe('gh');
   });
 });

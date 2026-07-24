@@ -19,20 +19,39 @@ import { sealSvg } from '../badges/seal';
 import { GITHUB_MARK_PATH, GITHUB_REPO_URL, Layout } from './layout';
 import { HERO_PILLS, INLINE_PILLS, README_FLATS } from './landingDemo';
 
-/** Frozen M4 interface — both agents build to this. */
+/** Frozen interface — both agents build to this. */
 export interface LandingPageProps {
-  /** null → signed-out variant; set → signed-in CTA variant. */
-  auth: { attestedCount: number } | null;
+  /**
+   * null → signed-out variant; set → signed-in CTA variant. `handle` feeds
+   * the shared account menu; `attestedCount` the CTA microcopy.
+   */
+  auth: { attestedCount: number; handle: string } | null;
+  /**
+   * When true, render the post-logout acknowledgment band above the hero
+   * (Decision B). The server sets it from `?signed_out=1`, which is a
+   * DISTINCT edge-cache key — the base `/` cached page is never mutated
+   * per-request. Dismiss is a plain `<a href="/">`, no JS.
+   */
+  signedOut?: boolean;
 }
 
 const EYEBROW_CLASS = 'font-mono text-[11px] tracking-[2px] text-muted uppercase';
 const MICROCOPY_CLASS = 'mt-[14px] font-mono text-[12px] text-muted';
 const CTA_CLASS =
   'inline-flex items-center gap-[9px] rounded-[3px] bg-ink px-6 py-[13px] font-mono text-[14px] tracking-[0.3px] text-paper';
+/**
+ * Under-CTA "View sample certificate ↗" link (Decision A). Accent is
+ * permitted here by design decision 10c ("the mock renders it accent"); it
+ * points at a real, publicly-attested certificate so the sample always
+ * resolves to a live 200.
+ */
+const SAMPLE_CERT_HREF = '/verify/supergithubo/wnston.dev';
 
 export function LandingPage(props: LandingPageProps) {
+  const account = props.auth === null ? null : { handle: props.auth.handle };
   return (
-    <Layout title="GitCert — verified badges for private GitHub repositories">
+    <Layout title="GitCert — verified badges for private GitHub repositories" account={account}>
+      {props.signedOut ? <SignedOutBand /> : null}
       <Hero auth={props.auth} />
       <StepsStrip />
       <div class="mx-auto max-w-[1000px] px-5 py-10 sm:px-7 sm:py-14">
@@ -41,6 +60,32 @@ export function LandingPage(props: LandingPageProps) {
       </div>
       <TrustStrip />
     </Layout>
+  );
+}
+
+/**
+ * Post-logout acknowledgment band (Decision B). Rendered only when the server
+ * passed `signedOut` (the `/?signed_out=1` cache variant). Reassures that
+ * signing out did NOT touch repo access — badges keep resolving. Dismiss is a
+ * plain link back to `/` (the un-flagged, base-cached URL): zero JS, no cache
+ * poisoning.
+ */
+function SignedOutBand() {
+  return (
+    <div class="border-b border-hair bg-panel">
+      <div class="mx-auto flex max-w-[1120px] items-center gap-[11px] px-4 py-[11px] font-mono text-[12.5px] text-soft sm:px-7">
+        {raw(sealSvg({ size: 15, kind: 'check', color: 'var(--accent)' }))}
+        <span>Signed out of GitCert. Your repo access is untouched — badges keep resolving.</span>
+        <a
+          data-nav
+          href="/"
+          aria-label="dismiss"
+          class="ml-auto flex-none px-[2px] py-1 text-[14px] leading-none text-muted"
+        >
+          ✕
+        </a>
+      </div>
+    </div>
   );
 }
 
@@ -54,8 +99,8 @@ function Hero(props: { auth: LandingPageProps['auth'] }) {
         independently attested.
       </h1>
       <p class="mx-auto mb-7 max-w-[560px] text-[15.5px] leading-[1.55] text-body text-pretty sm:mb-8 sm:text-[18px]">
-        Badges for repos nobody else can see — and public ones too. GitCert reads your real stats
-        from GitHub, signs them, and serves badges that recruiters and clients can verify.
+        Help clients and recruiters trust your experience with cryptographically verifiable
+        certificates from your private GitHub repositories—without exposing your source code.
       </p>
       <div class="mb-9 flex flex-wrap justify-center gap-[10px]">
         {HERO_PILLS.map((svg) => (
@@ -67,7 +112,12 @@ function Hero(props: { auth: LandingPageProps['auth'] }) {
   );
 }
 
-/** Signed-out CTA: GitHub mark + "Connect GitHub" → /auth/login. */
+/**
+ * Signed-out CTA: GitHub mark + "Install App" → /auth/login (decision 3-REV
+ * relabel; the /auth/login install flow is unchanged). The old "read-only ·
+ * installs in ~15s" microcopy is replaced by the "View sample certificate ↗"
+ * link (Decision A).
+ */
 function ConnectCta() {
   return (
     <>
@@ -75,10 +125,31 @@ function ConnectCta() {
         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" class="block">
           <path d={GITHUB_MARK_PATH} />
         </svg>
-        Connect GitHub
+        Install App
       </a>
-      <div class={MICROCOPY_CLASS}>read-only · installs in ~15s</div>
+      <SampleCertLink />
     </>
+  );
+}
+
+/**
+ * "View sample certificate ↗" — a same-origin link to a real, publicly
+ * attested certificate (Decision A). Accent + external-arrow styling; opens
+ * in a new tab (↗ convention) so the visitor keeps the landing.
+ */
+function SampleCertLink() {
+  return (
+    <div class="mt-[18px]">
+      <a
+        data-nav
+        href={SAMPLE_CERT_HREF}
+        target="_blank"
+        rel="noopener"
+        class="inline-flex items-center gap-[6px] font-mono text-[13px] text-accent"
+      >
+        View sample certificate ↗
+      </a>
+    </div>
   );
 }
 
