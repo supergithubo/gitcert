@@ -63,7 +63,6 @@ function fixtureProps(overrides: Partial<DashboardPageProps> = {}): DashboardPag
         ],
       }),
     ],
-    lastSyncAt: '2026-07-22T14:03:00Z',
     ...overrides,
   };
 }
@@ -211,11 +210,6 @@ describe('DashboardPage — header and account groups', () => {
     expect(html).not.toContain('id="gc-refresh"');
     expect(html).not.toContain('refresh now');
     expect(html).not.toContain('gc-refresh-note');
-  });
-
-  it('renders last sync as a full UTC stamp, em-dash when null', () => {
-    expect(render(DashboardPage(fixtureProps()))).toContain('last sync 2026-07-22 14:03 UTC');
-    expect(render(DashboardPage(fixtureProps({ lastSyncAt: null })))).toContain('last sync —');
   });
 });
 
@@ -482,7 +476,7 @@ describe('DashboardPage responsive breakpoints (mobile comp)', () => {
 
 describe('DashboardPage — empty state', () => {
   it('renders the comp empty state and hides the builder and scripts', () => {
-    const html = render(DashboardPage(fixtureProps({ accounts: [], lastSyncAt: null })));
+    const html = render(DashboardPage(fixtureProps({ accounts: [] })));
     expect(html).toContain('https://github.com/apps/gitcert-app/installations/new');
     expect(html).toContain('No installations yet');
     expect(html).toContain('Install GitCert on your account or an organization');

@@ -284,8 +284,6 @@ export interface OwnedAccount {
 /** `GET /dashboard`'s full read (Frozen Interface `DashboardPageProps`, minus `login`). */
 export interface OwnedReposResult {
   accounts: OwnedAccount[];
-  /** MAX(collected_at) across every live repo the user administers, ISO — null if never collected. */
-  lastSyncAt: string | null;
 }
 
 interface OwnedRepoRow {
@@ -351,8 +349,7 @@ function groupOwnedRepoRows(rows: OwnedRepoRow[]): OwnedAccount[] {
  * input-derived, exact because a user only ever administers their own
  * `User` installation. Excluded (`included = 0`) rows are still listed —
  * Decision 7 keeps them selectable in the builder, only greyed in the UI.
- * One query (not a per-account fan-out); `lastSyncAt` is derived in
- * TypeScript from the same result set (no second round trip).
+ * One query, not a per-account fan-out.
  */
 export async function selectOwnedRepos(
   db: D1Database,
@@ -373,17 +370,7 @@ export async function selectOwnedRepos(
     .bind(githubUserId)
     .all<OwnedRepoRow>();
 
-  const accounts = groupOwnedRepoRows(result.results);
-  const lastSyncAt = accounts.reduce<string | null>((latest, account) => {
-    for (const repo of account.repos) {
-      if (repo.collectedAt !== null && (latest === null || repo.collectedAt > latest)) {
-        latest = repo.collectedAt;
-      }
-    }
-    return latest;
-  }, null);
-
-  return { accounts, lastSyncAt };
+  return { accounts: groupOwnedRepoRows(result.results) };
 }
 
 /**

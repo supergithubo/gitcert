@@ -390,9 +390,8 @@ no stored token).
   repos still yields a group (empty repo list). Within a group, repos are
   non-removed and sorted `(owner, name)`; excluded (`included = 0`) repos
   are still listed (greyed, still selectable — re-enabling is only
-  possible if they stay visible). `lastSyncAt` is the max `collected_at`
-  across every repo across every group (`null` if nothing has been
-  collected yet). **No GitHub call in this path** (edge-cache/attestation
+  possible if they stay visible). Each repo row shows its own relative
+  last-synced time. **No GitHub call in this path** (edge-cache/attestation
   invariant — dashboard reads are D1-only).
 
 ### `GET /setup`

@@ -479,7 +479,7 @@ describe('db.ts', () => {
   });
 
   describe('selectOwnedRepos', () => {
-    it('lists only the linked tenant repos, sorted (owner, name), with lastSyncAt derived from collectedAt (happy path)', async () => {
+    it('lists only the linked tenant repos, sorted (owner, name) (happy path)', async () => {
       await upsertInstallation(env.DB, {
         id: 30,
         accountLogin: 'wnston',
@@ -531,7 +531,6 @@ describe('db.ts', () => {
             ],
           },
         ],
-        lastSyncAt: '2026-07-22T00:00:00Z',
       });
     });
 
@@ -594,7 +593,6 @@ describe('db.ts', () => {
       // (Decision D2).
       expect(result).toEqual({
         accounts: [{ installationId: 33, accountLogin: 'wnston', accountType: 'User', repos: [] }],
-        lastSyncAt: null,
       });
     });
 
@@ -610,7 +608,6 @@ describe('db.ts', () => {
 
       await expect(selectOwnedRepos(env.DB, 3500)).resolves.toEqual({
         accounts: [{ installationId: 35, accountLogin: 'wnston', accountType: 'User', repos: [] }],
-        lastSyncAt: null,
       });
     });
 
@@ -670,7 +667,6 @@ describe('db.ts', () => {
 
       await expect(selectOwnedRepos(env.DB, 3700)).resolves.toEqual({
         accounts: [],
-        lastSyncAt: null,
       });
     });
 
@@ -701,7 +697,6 @@ describe('db.ts', () => {
     it('returns an empty result for a tenant with no linked installations (edge case)', async () => {
       await expect(selectOwnedRepos(env.DB, 999999)).resolves.toEqual({
         accounts: [],
-        lastSyncAt: null,
       });
     });
   });

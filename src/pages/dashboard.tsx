@@ -64,8 +64,6 @@ export interface DashboardPageProps {
   login: string;
   /** ONLY the session tenant's accounts; ordered (personal first) by the caller. */
   accounts: DashboardAccount[];
-  /** MAX(stats.collected_at) across repos, ISO — null if never collected. */
-  lastSyncAt: string | null;
 }
 
 /** Builder dropdown order (spec Decision 5 — the eight M2 slugs). */
@@ -412,7 +410,7 @@ const DASHBOARD_SCRIPT = `(function () {
 })();`;
 
 export function DashboardPage(props: DashboardPageProps) {
-  const { login, accounts, lastSyncAt } = props;
+  const { login, accounts } = props;
   // Single clock read; `/dashboard` is no-store so SSR relative time is safe.
   const nowIso = new Date().toISOString();
   const selected = accounts.flatMap((a) => a.repos)[0];
@@ -428,12 +426,7 @@ export function DashboardPage(props: DashboardPageProps) {
         {accounts.length === 0 ? (
           <EmptyState />
         ) : (
-          <DashboardCard
-            accounts={accounts}
-            selected={selected}
-            lastSyncAt={lastSyncAt}
-            nowIso={nowIso}
-          />
+          <DashboardCard accounts={accounts} selected={selected} nowIso={nowIso} />
         )}
       </div>
     </Layout>
@@ -475,10 +468,9 @@ function EmptyState() {
 function DashboardCard(props: {
   accounts: DashboardAccount[];
   selected: DashboardRepo | undefined;
-  lastSyncAt: string | null;
   nowIso: string;
 }) {
-  const { accounts, selected, lastSyncAt, nowIso } = props;
+  const { accounts, selected, nowIso } = props;
   // Grouped exactly as rendered, so the script re-derives builder state on
   // selection change with no round-trip (spec Step 8).
   const state = {
@@ -499,12 +491,7 @@ function DashboardCard(props: {
   const stateJson = JSON.stringify(state).replace(/</g, '\\u003c');
   return (
     <div class="grid grid-cols-1 border border-hair-strong bg-card lg:grid-cols-[400px_1fr]">
-      <AccountPanel
-        accounts={accounts}
-        selected={selected}
-        lastSyncAt={lastSyncAt}
-        nowIso={nowIso}
-      />
+      <AccountPanel accounts={accounts} selected={selected} nowIso={nowIso} />
       {selected === undefined ? <NoSelectionPanel /> : <BuilderPanel selected={selected} />}
       <script type="application/json" id="gc-state">
         {raw(stateJson)}
@@ -517,10 +504,9 @@ function DashboardCard(props: {
 function AccountPanel(props: {
   accounts: DashboardAccount[];
   selected: DashboardRepo | undefined;
-  lastSyncAt: string | null;
   nowIso: string;
 }) {
-  const { accounts, selected, lastSyncAt, nowIso } = props;
+  const { accounts, selected, nowIso } = props;
   return (
     <div class="border-b border-hair p-5 lg:border-r lg:border-b-0 lg:p-6">
       <div class={`${PANEL_HEADING_CLASS} mb-4`}>Accounts</div>
@@ -546,9 +532,6 @@ function AccountPanel(props: {
         >
           install new account
         </a>
-      </div>
-      <div class="mt-3 font-mono text-[11px] text-muted">
-        last sync {lastSyncAt === null ? '—' : formatUtcStamp(lastSyncAt)}
       </div>
     </div>
   );

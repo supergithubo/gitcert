@@ -109,7 +109,7 @@ describe('GET /dashboard', () => {
     expect(response.headers.get('Location')).toBe('/auth/login');
   });
 
-  it('renders only the session tenant’s repos, greys excluded rows, and reports lastSyncAt (happy path)', async () => {
+  it('renders only the session tenant’s repos and greys excluded rows (happy path)', async () => {
     await upsertInstallation(env.DB, {
       id: 1,
       accountLogin: 'wnston',

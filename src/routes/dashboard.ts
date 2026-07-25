@@ -90,8 +90,8 @@ dashboard.get('/dashboard', async (c) => {
     return c.redirect('/auth/login', 302);
   }
 
-  const { accounts, lastSyncAt } = await selectOwnedRepos(c.env.DB, session.githubId);
-  const html = await DashboardPage({ login: session.login, accounts, lastSyncAt });
+  const { accounts } = await selectOwnedRepos(c.env.DB, session.githubId);
+  const html = await DashboardPage({ login: session.login, accounts });
   return htmlResponse(html, 200);
 });
 
