@@ -27,6 +27,8 @@ const GRAPHQL_ENDPOINT = 'https://api.github.com/graphql';
 export interface RunCollectorOptions {
   /** Collect exactly this installation, bypassing the staleness scan (webhook first-collect, manual refresh). */
   installationId?: number;
+  /** With `installationId`, collect only this single repo (per-repo manual refresh) instead of the whole installation. Ignored on the staleness scan. */
+  repoId?: number;
   /** Injectable clock for deterministic tests — defaults to the real time. */
   now?: () => Date;
 }
@@ -39,17 +41,20 @@ export interface RunCollectorOptions {
  */
 export async function runCollector(env: Env, options: RunCollectorOptions = {}): Promise<void> {
   const now = options.now ?? (() => new Date());
-  const installationIds =
-    options.installationId !== undefined
-      ? [options.installationId]
-      : await selectStaleInstallations(
-          env.DB,
-          new Date(now().getTime() - STALE_THRESHOLD_MS).toISOString(),
-        );
+  const targeted = options.installationId !== undefined;
+  const installationIds = targeted
+    ? [options.installationId as number]
+    : await selectStaleInstallations(
+        env.DB,
+        new Date(now().getTime() - STALE_THRESHOLD_MS).toISOString(),
+      );
+  // `repoId` only narrows a targeted single-installation refresh; the stale
+  // scan always collects each installation in full.
+  const repoId = targeted ? options.repoId : undefined;
 
   for (const installationId of installationIds) {
     try {
-      await collectInstallation(env, installationId, now);
+      await collectInstallation(env, installationId, now, repoId);
     } catch (error) {
       console.error(
         `gitcert collector: installation ${installationId} failed:`,
@@ -63,6 +68,7 @@ async function collectInstallation(
   env: Env,
   installationId: number,
   now: () => Date,
+  repoId?: number,
 ): Promise<void> {
   // Liveness guard (spec overview Decision 8): never mint a token for an
   // unknown or suspended installation. Applies to both the cron stale scan
@@ -87,7 +93,7 @@ async function collectInstallation(
     return;
   }
 
-  const repos = await selectReposForInstallation(env.DB, installationId);
+  const repos = await selectReposForInstallation(env.DB, installationId, repoId);
   const statsInputs: StatsInput[] = [];
   for (const repoChunk of chunk(repos, MAX_REPOS_PER_QUERY)) {
     statsInputs.push(...(await collectRepoChunk(env, tokenResult.token, repoChunk, now)));

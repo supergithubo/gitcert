@@ -523,10 +523,14 @@ export async function countAttestedRepos(db: D1Database, githubUserId: number): 
  * All active (non-removed) repos for an installation, joined with their
  * latest stored stats (commits, first_commit_at) so the collector can
  * decide whether a first-commit refetch is needed without a second query.
+ * With `repoId`, narrows to that single repo (per-repo manual refresh) —
+ * still scoped to the installation, so a repo id from another tenant returns
+ * nothing.
  */
 export async function selectReposForInstallation(
   db: D1Database,
   installationId: number,
+  repoId?: number,
 ): Promise<RepoForCollection[]> {
   const result = await db
     .prepare(
@@ -534,9 +538,10 @@ export async function selectReposForInstallation(
               s.commits AS previous_commits, s.first_commit_at AS previous_first_commit_at
        FROM repos r
        LEFT JOIN stats s ON s.repo_id = r.id
-       WHERE r.installation_id = ?1 AND r.removed_at IS NULL`,
+       WHERE r.installation_id = ?1 AND r.removed_at IS NULL
+         AND (?2 IS NULL OR r.id = ?2)`,
     )
-    .bind(installationId)
+    .bind(installationId, repoId ?? null)
     .all<{
       id: number;
       owner: string;

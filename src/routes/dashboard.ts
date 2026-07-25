@@ -149,8 +149,11 @@ dashboard.post('/repos/:id/refresh', async (c) => {
     return jsonResponse({ error: 'rate_limited' }, 429);
   }
 
+  // Per-repo refresh: collect only this repo, not the whole installation —
+  // the row's sync icon acts on the repo the user clicked (the cron still
+  // batches the full installation).
   c.executionCtx.waitUntil(
-    runCollector(c.env, { installationId: repo.installationId }).then(() =>
+    runCollector(c.env, { installationId: repo.installationId, repoId: repo.id }).then(() =>
       purgePublicUrls({ owner: repo.owner, name: repo.name }),
     ),
   );

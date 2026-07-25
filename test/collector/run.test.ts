@@ -107,6 +107,35 @@ describe('runCollector', () => {
     await expect(verify(row!.payload_json, row!.signature, env.SIGNING_KEY)).resolves.toBe(true);
   });
 
+  it('with repoId, collects only the targeted repo and leaves the rest of the installation untouched (per-repo refresh)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 11,
+      accountLogin: 'wnston',
+      accountId: 1100,
+      accountType: 'User',
+    });
+    await upsertRepos(env.DB, 11, [
+      { id: 110, owner: 'wnston', name: 'repo-x', private: true },
+      { id: 111, owner: 'wnston', name: 'repo-y', private: true },
+    ]);
+    stubGithubFetch([{ r0: repoGraphqlResult() }]);
+
+    await runCollector(env, {
+      installationId: 11,
+      repoId: 111,
+      now: () => new Date('2026-07-22T12:00:00Z'),
+    });
+
+    const targeted = await env.DB.prepare('SELECT repo_id FROM stats WHERE repo_id = ?1')
+      .bind(111)
+      .first();
+    const sibling = await env.DB.prepare('SELECT repo_id FROM stats WHERE repo_id = ?1')
+      .bind(110)
+      .first();
+    expect(targeted).not.toBeNull();
+    expect(sibling).toBeNull();
+  });
+
   it('skips an installation whose token mint fails, without aborting other installations (error path)', async () => {
     await upsertInstallation(env.DB, {
       id: 2,
