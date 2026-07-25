@@ -6,6 +6,7 @@ import { createStateCookie } from '../../src/lib/session';
 const ORIGIN = 'https://gitcert.harborstack.app';
 const TOKEN_URL = 'https://github.com/login/oauth/access_token';
 const USER_URL = 'https://api.github.com/user';
+const INSTALLATIONS_URL = 'https://api.github.com/user/installations?per_page=100';
 const GRAPHQL_URL = 'https://api.github.com/graphql';
 const TOKEN_MINT_PATTERN = /\/app\/installations\/\d+\/access_tokens$/;
 
@@ -41,10 +42,17 @@ function fixtureStats(repoId: number, overrides: Partial<StatsInput> = {}): Stat
   };
 }
 
-/** Stubs `fetch` for a successful OAuth exchange + identity lookup, plus (optionally) the collector's boundary. */
+/**
+ * Stubs `fetch` for a successful OAuth exchange + identity lookup + the
+ * (now-unconditional) `GET /user/installations` reconcile, plus
+ * (optionally) the collector's boundary. `installationIds` defaults to `[]`
+ * — most tests don't care about the installations response, but every
+ * successful-identity path hits this URL now, so it must always resolve.
+ */
 function stubHappyOAuth(
   identity: { id: number; login: string },
   extra?: (url: string, init?: RequestInit) => Response | null,
+  installationIds: number[] = [],
 ) {
   vi.stubGlobal(
     'fetch',
@@ -55,6 +63,9 @@ function stubHappyOAuth(
       }
       if (url === USER_URL) {
         return jsonResponse(identity);
+      }
+      if (url === INSTALLATIONS_URL) {
+        return jsonResponse({ installations: installationIds.map((id) => ({ id })) });
       }
       const extraResponse = extra?.(url, init);
       if (extraResponse) return extraResponse;
@@ -98,6 +109,7 @@ describe('GET /auth/login', () => {
 describe('GET /auth/callback', () => {
   beforeEach(async () => {
     await env.DB.batch([
+      env.DB.prepare('DELETE FROM installation_users'),
       env.DB.prepare('DELETE FROM stats'),
       env.DB.prepare('DELETE FROM repos'),
       env.DB.prepare('DELETE FROM installations'),
@@ -155,16 +167,20 @@ describe('GET /auth/callback', () => {
     // Never collected -> stale -> kick expected.
 
     const graphqlCalls: string[] = [];
-    stubHappyOAuth({ id: 42, login: 'wnston' }, (url) => {
-      if (TOKEN_MINT_PATTERN.test(url)) {
-        return jsonResponse({ token: 'ghs_test', expires_at: '2026-07-22T13:00:00Z' }, 201);
-      }
-      if (url === GRAPHQL_URL) {
-        graphqlCalls.push(url);
-        return jsonResponse({ data: { r0: null } });
-      }
-      return null;
-    });
+    stubHappyOAuth(
+      { id: 42, login: 'wnston' },
+      (url) => {
+        if (TOKEN_MINT_PATTERN.test(url)) {
+          return jsonResponse({ token: 'ghs_test', expires_at: '2026-07-22T13:00:00Z' }, 201);
+        }
+        if (url === GRAPHQL_URL) {
+          graphqlCalls.push(url);
+          return jsonResponse({ data: { r0: null } });
+        }
+        return null;
+      },
+      [910],
+    );
 
     // No state query param, no gc_oauth_state cookie sent — exactly what
     // GitHub's install-initiated redirect looks like in production.
@@ -198,6 +214,7 @@ describe('GET /auth/callback', () => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url === TOKEN_URL) return jsonResponse({ access_token: 'gho_test_token' });
       if (url === USER_URL) return jsonResponse({ id: 42, login: 'wnston' });
+      if (url === INSTALLATIONS_URL) return jsonResponse({ installations: [] });
       if (TOKEN_MINT_PATTERN.test(url))
         throw new Error('must not mint a token for an unowned installation');
       throw new Error(`unexpected fetch to ${url}`);
@@ -304,16 +321,20 @@ describe('GET /auth/callback', () => {
 
     const { nonce } = createStateCookie();
     const graphqlCalls: string[] = [];
-    stubHappyOAuth({ id: 42, login: 'wnston' }, (url) => {
-      if (TOKEN_MINT_PATTERN.test(url)) {
-        return jsonResponse({ token: 'ghs_test', expires_at: '2026-07-22T13:00:00Z' }, 201);
-      }
-      if (url === GRAPHQL_URL) {
-        graphqlCalls.push(url);
-        return jsonResponse({ data: { r0: null } });
-      }
-      return null;
-    });
+    stubHappyOAuth(
+      { id: 42, login: 'wnston' },
+      (url) => {
+        if (TOKEN_MINT_PATTERN.test(url)) {
+          return jsonResponse({ token: 'ghs_test', expires_at: '2026-07-22T13:00:00Z' }, 201);
+        }
+        if (url === GRAPHQL_URL) {
+          graphqlCalls.push(url);
+          return jsonResponse({ data: { r0: null } });
+        }
+        return null;
+      },
+      [900],
+    );
 
     const response = await SELF.fetch(
       `${ORIGIN}/auth/callback?code=abc&state=${nonce}&installation_id=900&setup_action=install`,
@@ -340,6 +361,9 @@ describe('GET /auth/callback', () => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url === TOKEN_URL) return jsonResponse({ access_token: 'gho_test_token' });
       if (url === USER_URL) return jsonResponse({ id: 42, login: 'wnston' });
+      // Identity 42 administers nothing — installation 901 belongs to a
+      // different account and must stay unlinked.
+      if (url === INSTALLATIONS_URL) return jsonResponse({ installations: [] });
       if (TOKEN_MINT_PATTERN.test(url))
         throw new Error('must not mint a token for an unowned installation');
       throw new Error(`unexpected fetch to ${url}`);
@@ -369,6 +393,9 @@ describe('GET /auth/callback', () => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url === TOKEN_URL) return jsonResponse({ access_token: 'gho_test_token' });
       if (url === USER_URL) return jsonResponse({ id: 42, login: 'wnston' });
+      // Links 42 -> 902 so this exercises the freshness gate specifically,
+      // not the ownership gate.
+      if (url === INSTALLATIONS_URL) return jsonResponse({ installations: [{ id: 902 }] });
       throw new Error(`unexpected fetch to ${url} (no collect should be kicked)`);
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -378,6 +405,115 @@ describe('GET /auth/callback', () => {
       { redirect: 'manual', headers: { Cookie: `gc_oauth_state=${nonce}` } },
     );
     expect(response.status).toBe(302);
+  });
+
+  it('reconciles installation_users links from GET /user/installations on every successful sign-in (happy path — link write)', async () => {
+    const { nonce } = createStateCookie();
+    stubHappyOAuth({ id: 42, login: 'wnston' }, undefined, [920, 921]);
+
+    const response = await SELF.fetch(`${ORIGIN}/auth/callback?code=abc&state=${nonce}`, {
+      redirect: 'manual',
+      headers: { Cookie: `gc_oauth_state=${nonce}` },
+    });
+    expect(response.status).toBe(302);
+
+    const rows = await env.DB.prepare(
+      'SELECT installation_id FROM installation_users WHERE github_user_id = ?1 ORDER BY installation_id',
+    )
+      .bind(42)
+      .all<{ installation_id: number }>();
+    expect(rows.results).toEqual([{ installation_id: 920 }, { installation_id: 921 }]);
+  });
+
+  it('a failed GET /user/installations response still signs the user in and leaves pre-existing links intact (fail-open)', async () => {
+    await env.DB.prepare(
+      'INSERT INTO installation_users (installation_id, github_user_id) VALUES (?1, ?2)',
+    )
+      .bind(930, 42)
+      .run();
+
+    const { nonce } = createStateCookie();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === TOKEN_URL) return jsonResponse({ access_token: 'gho_test_token' });
+      if (url === USER_URL) return jsonResponse({ id: 42, login: 'wnston' });
+      if (url === INSTALLATIONS_URL) return new Response('server error', { status: 500 });
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await SELF.fetch(`${ORIGIN}/auth/callback?code=abc&state=${nonce}`, {
+      redirect: 'manual',
+      headers: { Cookie: `gc_oauth_state=${nonce}` },
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/dashboard');
+    expect(findSetCookie(response, 'gc_session')).toBeDefined();
+
+    const rows = await env.DB.prepare(
+      'SELECT installation_id FROM installation_users WHERE github_user_id = ?1',
+    )
+      .bind(42)
+      .all<{ installation_id: number }>();
+    expect(rows.results).toEqual([{ installation_id: 930 }]);
+  });
+
+  it('a malformed GET /user/installations body also fails open and keeps existing links intact (error path)', async () => {
+    await env.DB.prepare(
+      'INSERT INTO installation_users (installation_id, github_user_id) VALUES (?1, ?2)',
+    )
+      .bind(931, 42)
+      .run();
+
+    const { nonce } = createStateCookie();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === TOKEN_URL) return jsonResponse({ access_token: 'gho_test_token' });
+      if (url === USER_URL) return jsonResponse({ id: 42, login: 'wnston' });
+      if (url === INSTALLATIONS_URL) return jsonResponse({ not_installations: 'nope' });
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await SELF.fetch(`${ORIGIN}/auth/callback?code=abc&state=${nonce}`, {
+      redirect: 'manual',
+      headers: { Cookie: `gc_oauth_state=${nonce}` },
+    });
+    expect(response.status).toBe(302);
+    expect(findSetCookie(response, 'gc_session')).toBeDefined();
+
+    const rows = await env.DB.prepare(
+      'SELECT installation_id FROM installation_users WHERE github_user_id = ?1',
+    )
+      .bind(42)
+      .all<{ installation_id: number }>();
+    expect(rows.results).toEqual([{ installation_id: 931 }]);
+  });
+
+  it('never persists the exchanged token anywhere — not in the session cookie, not in D1 (attestation invariant)', async () => {
+    const { nonce } = createStateCookie();
+    const accessToken = 'gho_unique_test_token_should_never_be_stored';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === TOKEN_URL) return jsonResponse({ access_token: accessToken });
+      if (url === USER_URL) return jsonResponse({ id: 42, login: 'wnston' });
+      if (url === INSTALLATIONS_URL) return jsonResponse({ installations: [{ id: 940 }] });
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await SELF.fetch(`${ORIGIN}/auth/callback?code=abc&state=${nonce}`, {
+      redirect: 'manual',
+      headers: { Cookie: `gc_oauth_state=${nonce}` },
+    });
+    expect(response.status).toBe(302);
+
+    const sessionCookie = findSetCookie(response, 'gc_session');
+    expect(sessionCookie).toBeDefined();
+    expect(sessionCookie).not.toContain(accessToken);
+
+    const linkRows = await env.DB.prepare('SELECT * FROM installation_users').all();
+    expect(JSON.stringify(linkRows.results)).not.toContain(accessToken);
   });
 });
 

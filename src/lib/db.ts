@@ -225,22 +225,25 @@ export interface OwnedInstallationFreshness {
 /**
  * Decision 9's D1-verified ownership lookup (spec overview): `installationId`
  * is only ever trusted as far as this scoped query says — `null` when the
- * installation is unknown, not owned by `accountId` (numeric GitHub user
- * id — rename-safe per Decision 2), or suspended, byte-identical whichever
- * cause. Callers (post-install kick) use the returned freshness to decide
- * whether a collect is warranted; they never see which of the three caused
- * a `null`.
+ * installation is unknown, `githubUserId` does not administer it (no
+ * `installation_users` link — org-installations spec), or it is suspended,
+ * byte-identical whichever cause. Callers (post-install kick) use the
+ * returned freshness to decide whether a collect is warranted; they never
+ * see which of the three caused a `null`.
  */
 export async function selectOwnedInstallationFreshness(
   db: D1Database,
   installationId: number,
-  accountId: number,
+  githubUserId: number,
 ): Promise<OwnedInstallationFreshness | null> {
   const installation = await db
     .prepare(
-      `SELECT id FROM installations WHERE id = ?1 AND account_id = ?2 AND suspended_at IS NULL`,
+      `SELECT i.id AS id
+       FROM installations i
+       JOIN installation_users iu ON iu.installation_id = i.id
+       WHERE i.id = ?1 AND iu.github_user_id = ?2 AND i.suspended_at IS NULL`,
     )
-    .bind(installationId, accountId)
+    .bind(installationId, githubUserId)
     .first<{ id: number }>();
   if (!installation) return null;
 
@@ -256,71 +259,158 @@ export async function selectOwnedInstallationFreshness(
   return { latestCollectedAt: row?.latest ?? null };
 }
 
-/** One dashboard-tenant repo (Frozen Interface `DashboardRepo`, spec overview). */
+/** `installations.account_type` — the two shapes a GitHub App installation can have. */
+export type AccountType = 'User' | 'Organization';
+
+/** One dashboard-tenant repo within an `OwnedAccount` group (Frozen Interface `DashboardRepo`, spec overview). */
 export interface OwnedRepo {
   id: number;
   owner: string;
   name: string;
   private: boolean;
   included: boolean;
+  /** `stats.collected_at` (ISO) — `null` means no stats row yet (collecting). */
+  collectedAt: string | null;
+}
+
+/** One installation the session tenant administers, with its live repos (Frozen Interface `DashboardAccount`, spec overview). */
+export interface OwnedAccount {
+  installationId: number;
+  accountLogin: string;
+  accountType: AccountType;
+  repos: OwnedRepo[];
 }
 
 /** `GET /dashboard`'s full read (Frozen Interface `DashboardPageProps`, minus `login`). */
 export interface OwnedReposResult {
-  repos: OwnedRepo[];
+  accounts: OwnedAccount[];
+  /** MAX(collected_at) across every live repo the user administers, ISO — null if never collected. */
   lastSyncAt: string | null;
 }
 
-/**
- * The session tenant's full dashboard read (spec overview §Route
- * contracts — `GET /dashboard` calls exactly this one function): every
- * non-removed repo of every live (non-suspended) installation owned by
- * `accountId` (Decision 2's numeric-id mapping, rename-safe), sorted
- * `(owner, name)` per the Frozen Interface so the page never re-sorts,
- * plus `MAX(stats.collected_at)` across those repos for `lastSyncAt`
- * (`null` when nothing has been collected yet). Excluded (`included = 0`)
- * rows are still listed — Decision 7 keeps them selectable in the
- * builder, only greyed in the UI. Two queries (not a per-repo fan-out),
- * run concurrently.
- */
-export async function selectOwnedRepos(
-  db: D1Database,
-  accountId: number,
-): Promise<OwnedReposResult> {
-  const [reposResult, lastSyncRow] = await Promise.all([
-    db
-      .prepare(
-        `SELECT r.id AS id, r.owner AS owner, r.name AS name,
-                r.private AS private, r.included AS included
-         FROM repos r
-         JOIN installations i ON i.id = r.installation_id
-         WHERE i.account_id = ?1 AND i.suspended_at IS NULL AND r.removed_at IS NULL
-         ORDER BY r.owner ASC, r.name ASC`,
-      )
-      .bind(accountId)
-      .all<{ id: number; owner: string; name: string; private: number; included: number }>(),
-    db
-      .prepare(
-        `SELECT MAX(s.collected_at) AS latest
-         FROM repos r
-         JOIN installations i ON i.id = r.installation_id
-         LEFT JOIN stats s ON s.repo_id = r.id
-         WHERE i.account_id = ?1 AND i.suspended_at IS NULL AND r.removed_at IS NULL`,
-      )
-      .bind(accountId)
-      .first<{ latest: string | null }>(),
-  ]);
+interface OwnedRepoRow {
+  installation_id: number;
+  account_login: string;
+  account_type: string;
+  id: number | null;
+  owner: string | null;
+  name: string | null;
+  private: number | null;
+  included: number | null;
+  collected_at: string | null;
+}
 
-  return {
-    repos: reposResult.results.map((row) => ({
+/**
+ * Groups the flat `selectOwnedRepos` row set into per-installation account
+ * groups, in first-seen order (the SQL `ORDER BY` already puts the tenant's
+ * personal account first, then orgs alphabetically — this function never
+ * re-sorts). A `LEFT JOIN repos` row with no repo (`id IS NULL`) contributes
+ * an account group with an empty `repos` array (Decision D2 — an
+ * installation with zero live repos still renders). Module-private and
+ * pure so it is unit-testable without D1.
+ */
+function groupOwnedRepoRows(rows: OwnedRepoRow[]): OwnedAccount[] {
+  const accounts: OwnedAccount[] = [];
+  const byInstallation = new Map<number, OwnedAccount>();
+
+  for (const row of rows) {
+    let account = byInstallation.get(row.installation_id);
+    if (!account) {
+      account = {
+        installationId: row.installation_id,
+        accountLogin: row.account_login,
+        accountType: row.account_type as AccountType,
+        repos: [],
+      };
+      byInstallation.set(row.installation_id, account);
+      accounts.push(account);
+    }
+    if (row.id === null || row.owner === null || row.name === null) continue;
+    account.repos.push({
       id: row.id,
       owner: row.owner,
       name: row.name,
       private: row.private === 1,
       included: row.included === 1,
-    })),
-    lastSyncAt: lastSyncRow?.latest ?? null,
-  };
+      collectedAt: row.collected_at,
+    });
+  }
+
+  return accounts;
+}
+
+/**
+ * The session tenant's full dashboard read (spec overview §Route
+ * contracts — `GET /dashboard` calls exactly this one function): every
+ * installation `githubUserId` administers (via `installation_users`) that
+ * is live (non-suspended), each with its non-removed repos, grouped by
+ * account. `LEFT JOIN repos`/`stats` so an installation with zero live
+ * repos still yields a group (Decision D2). Ordering puts the tenant's own
+ * personal account first, then orgs alphabetically, repos `(owner, name)`
+ * within each group — a static literal `ORDER BY` expression, not
+ * input-derived, exact because a user only ever administers their own
+ * `User` installation. Excluded (`included = 0`) rows are still listed —
+ * Decision 7 keeps them selectable in the builder, only greyed in the UI.
+ * One query (not a per-account fan-out); `lastSyncAt` is derived in
+ * TypeScript from the same result set (no second round trip).
+ */
+export async function selectOwnedRepos(
+  db: D1Database,
+  githubUserId: number,
+): Promise<OwnedReposResult> {
+  const result = await db
+    .prepare(
+      `SELECT i.id AS installation_id, i.account_login AS account_login, i.account_type AS account_type,
+              r.id AS id, r.owner AS owner, r.name AS name,
+              r.private AS private, r.included AS included, s.collected_at AS collected_at
+       FROM installations i
+       JOIN installation_users iu ON iu.installation_id = i.id
+       LEFT JOIN repos r ON r.installation_id = i.id AND r.removed_at IS NULL
+       LEFT JOIN stats s ON s.repo_id = r.id
+       WHERE iu.github_user_id = ?1 AND i.suspended_at IS NULL
+       ORDER BY (i.account_type = 'User') DESC, i.account_login ASC, r.owner ASC, r.name ASC`,
+    )
+    .bind(githubUserId)
+    .all<OwnedRepoRow>();
+
+  const accounts = groupOwnedRepoRows(result.results);
+  const lastSyncAt = accounts.reduce<string | null>((latest, account) => {
+    for (const repo of account.repos) {
+      if (repo.collectedAt !== null && (latest === null || repo.collectedAt > latest)) {
+        latest = repo.collectedAt;
+      }
+    }
+    return latest;
+  }, null);
+
+  return { accounts, lastSyncAt };
+}
+
+/**
+ * Full reconcile of the installations `githubUserId` administers (spec
+ * overview §Step 2, org-installations): deletes every existing link for
+ * this user, then inserts one row per id in `installationIds`. An empty
+ * array is legal and means "administers nothing" (revocation — e.g. a
+ * user removed from every org between sign-ins). Batched as a single
+ * `db.batch()` call (D1 batches are transactional) so the reconcile never
+ * leaves a torn state. Bound parameters only.
+ */
+export async function replaceInstallationLinks(
+  db: D1Database,
+  githubUserId: number,
+  installationIds: number[],
+): Promise<void> {
+  const statements = [
+    db.prepare(`DELETE FROM installation_users WHERE github_user_id = ?1`).bind(githubUserId),
+    ...installationIds.map((installationId) =>
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO installation_users (installation_id, github_user_id) VALUES (?1, ?2)`,
+        )
+        .bind(installationId, githubUserId),
+    ),
+  ];
+  await db.batch(statements);
 }
 
 /** One repo, scoped to a tenant, with the fields `POST /repos/:id/refresh` needs. */
@@ -333,18 +423,18 @@ export interface OwnedRepoDetail {
 }
 
 /**
- * One repo scoped to `accountId`'s live (non-suspended) installations
- * (Decision 2) — `null` when unknown, not owned, removed, or the owning
- * installation is suspended (one bucket, byte-identical). Backs
- * `POST /repos/:id/refresh`'s ownership check, which turns any `null`
- * here into a uniform `404` — never a `403` that would let an
- * authenticated prober enumerate registered repo ids (Decision 4,
- * CRITICAL).
+ * One repo scoped to the installations `githubUserId` administers (via
+ * `installation_users`), restricted to live (non-suspended) installations
+ * — `null` when unknown, not owned, removed, or the owning installation is
+ * suspended (one bucket, byte-identical). Backs `POST /repos/:id/refresh`'s
+ * ownership check, which turns any `null` here into a uniform `404` —
+ * never a `403` that would let an authenticated prober enumerate
+ * registered repo ids (Decision 4, CRITICAL).
  */
 export async function selectOwnedRepo(
   db: D1Database,
   repoId: number,
-  accountId: number,
+  githubUserId: number,
 ): Promise<OwnedRepoDetail | null> {
   const row = await db
     .prepare(
@@ -352,11 +442,12 @@ export async function selectOwnedRepo(
               r.installation_id AS installation_id, s.collected_at AS collected_at
        FROM repos r
        JOIN installations i ON i.id = r.installation_id
+       JOIN installation_users iu ON iu.installation_id = i.id
        LEFT JOIN stats s ON s.repo_id = r.id
-       WHERE r.id = ?1 AND i.account_id = ?2
+       WHERE r.id = ?1 AND iu.github_user_id = ?2
          AND i.suspended_at IS NULL AND r.removed_at IS NULL`,
     )
-    .bind(repoId, accountId)
+    .bind(repoId, githubUserId)
     .first<{
       id: number;
       owner: string;
@@ -385,15 +476,19 @@ export async function updateRepoIncluded(
   db: D1Database,
   repoId: number,
   included: boolean,
-  accountId: number,
+  githubUserId: number,
 ): Promise<number> {
   const result = await db
     .prepare(
       `UPDATE repos SET included = ?1
        WHERE id = ?2 AND removed_at IS NULL
-         AND installation_id IN (SELECT id FROM installations WHERE account_id = ?3 AND suspended_at IS NULL)`,
+         AND installation_id IN (
+           SELECT i.id FROM installations i
+           JOIN installation_users iu ON iu.installation_id = i.id
+           WHERE iu.github_user_id = ?3 AND i.suspended_at IS NULL
+         )`,
     )
-    .bind(included ? 1 : 0, repoId, accountId)
+    .bind(included ? 1 : 0, repoId, githubUserId)
     .run();
   return result.meta.changes ?? 0;
 }
@@ -402,22 +497,24 @@ export async function updateRepoIncluded(
  * Truthful count of the session tenant's attested repos (M4 spec overview
  * §Step 2, backs `GET /`'s signed-in CTA microcopy): repos that are
  * `included = 1`, non-removed, on a live (non-suspended) installation
- * owned by `accountId` (Decision 2's numeric-id mapping, rename-safe),
- * AND have a stored `stats` row (an `INNER JOIN`, not a `LEFT JOIN` — a
- * just-installed, not-yet-collected repo does not count as "attested").
- * `0` for an unknown account, same as any tenant with nothing collected.
+ * `githubUserId` administers (via `installation_users` — org-installations
+ * spec), AND have a stored `stats` row (an `INNER JOIN`, not a `LEFT JOIN`
+ * — a just-installed, not-yet-collected repo does not count as
+ * "attested"). `0` for an unlinked/unknown account, same as any tenant
+ * with nothing collected.
  */
-export async function countAttestedRepos(db: D1Database, accountId: number): Promise<number> {
+export async function countAttestedRepos(db: D1Database, githubUserId: number): Promise<number> {
   const row = await db
     .prepare(
       `SELECT COUNT(*) AS count
        FROM repos r
        JOIN installations i ON i.id = r.installation_id
+       JOIN installation_users iu ON iu.installation_id = i.id
        JOIN stats s ON s.repo_id = r.id
-       WHERE i.account_id = ?1 AND i.suspended_at IS NULL
+       WHERE iu.github_user_id = ?1 AND i.suspended_at IS NULL
          AND r.removed_at IS NULL AND r.included = 1`,
     )
-    .bind(accountId)
+    .bind(githubUserId)
     .first<{ count: number }>();
   return row?.count ?? 0;
 }

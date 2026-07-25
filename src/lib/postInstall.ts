@@ -13,8 +13,9 @@ const FRESHNESS_WINDOW_MS = 5 * 60 * 1000;
 
 /**
  * Shared Decision 9 post-install flow (spec overview): D1-verifies
- * `installationId` is owned by `accountId` and live, then — only if its
- * repos' stats are missing or older than 5 minutes — kicks a targeted
+ * `installationId` is administered by `githubUserId` (via
+ * `installation_users` — org-installations spec) and live, then — only if
+ * its repos' stats are missing or older than 5 minutes — kicks a targeted
  * collector run via `waitUntil`. Used identically by `GET /auth/callback`'s
  * post-install branch and `GET /setup` so both GitHub redirect shapes
  * converge on one code path (both routes call this; neither duplicates the
@@ -26,10 +27,10 @@ const FRESHNESS_WINDOW_MS = 5 * 60 * 1000;
 export async function kickPostInstallCollect(
   env: Env,
   executionCtx: WaitUntilContext,
-  accountId: number,
+  githubUserId: number,
   installationId: number,
 ): Promise<void> {
-  const freshness = await selectOwnedInstallationFreshness(env.DB, installationId, accountId);
+  const freshness = await selectOwnedInstallationFreshness(env.DB, installationId, githubUserId);
   if (!freshness) return;
 
   const isStale =

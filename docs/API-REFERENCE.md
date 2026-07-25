@@ -276,13 +276,19 @@ public surfaces above. JSON errors use a consistent `{ "error": "<code>" }`
 shape.
 
 **Tenancy:** the tenant is the GitHub App installation; ownership maps
-session → the numeric GitHub user id (`account_id`) → its live
-(non-suspended) installations (rename-safe — a login change never breaks
-ownership). Every owner query/mutation is scoped through that join.
-**Unknown, not-owned, and removed resources are always a `404`, never a
-`403`** — a `403` would let an authenticated caller enumerate which repo
-ids are registered in gitcert, an existence oracle for private repos
-(CRITICAL invariant).
+session → the numeric GitHub user id → the installations the
+`installation_users` link table says that user administers → their live
+(non-suspended) repos (org-installations spec). `installations.account_id`
+alone is no longer the ownership key — it only ever matched a personal
+(`User`) installation, since an organization installation's `account_id`
+is the org's own GitHub id, never a member's. `installation_users` is
+populated from `GET /user/installations` at `/auth/callback` (below); a
+user administers an installation if GitHub reports them as having access
+to it (MVP: no admin-vs-member role gating). Every owner query/mutation is
+scoped through this join. **Unknown, not-owned, and removed resources are
+always a `404`, never a `403`** — a `403` would let an authenticated
+caller enumerate which repo ids are registered in gitcert, an existence
+oracle for private repos (CRITICAL invariant).
 
 **Session cookie** (`gc_session`): `base64url(payloadJson) + "." +
 base64url(HMAC-SHA256(SESSION_SECRET, base64url(payloadJson)))`, payload
@@ -330,22 +336,37 @@ no stored token).
 - **(3)** Exchanges `code` at `https://github.com/login/oauth/access_token`
   (`POST`, `Accept: application/json`) → failure is a `400` error page.
 - **(4)** `GET https://api.github.com/user` with the exchanged token →
-  `{ id, login }` → failure is a `400` error page. **The token is used for
-  this one request and discarded — never stored, never logged**
-  (attestation invariant).
-- **(5)** Sets the `gc_session` cookie for `{ github_id: id, login }`,
+  `{ id, login }` → failure is a `400` error page.
+- **(5)** `GET https://api.github.com/user/installations?per_page=100`
+  with the same exchanged token (org-installations spec) — parses
+  `{ installations: [{ id, … }] }`, keeping only numeric ids. A `2xx`
+  response reconciles `installation_users` for this `github_id`: deletes
+  every existing link for the user, then inserts one row per id returned
+  (`replaceInstallationLinks`) — an empty array is a legal "administers
+  nothing" (revocation). **Fail-open, mandatory:** any non-2xx response or
+  a body that doesn't parse to that shape skips the reconcile entirely and
+  keeps the user's existing links untouched; sign-in still succeeds. A
+  transient GitHub error must never de-authorize a user or blank their
+  dashboard. No pagination beyond the single `per_page=100` page (MVP,
+  YAGNI). **The token now serves exactly these two requests (identity,
+  then installation discovery) inside this one handler and is discarded
+  after — never stored, never logged, never placed in the session, never
+  written to D1** (attestation invariant, CRITICAL).
+- **(6)** Sets the `gc_session` cookie for `{ github_id: id, login }`,
   clears `gc_oauth_state`.
-- **(6)** If `installation_id` + `setup_action` query params are present
+- **(7)** If `installation_id` + `setup_action` query params are present
   (GitHub's "Request user authorization on install" redirect shape):
-  D1-verifies `installation_id` is owned by this session and live, and —
-  only if its repos' stats are missing or older than 5 minutes — kicks a
-  targeted `runCollector({ installationId })` via `waitUntil`. An
+  D1-verifies `installation_id` is administered by this session (via the
+  links just reconciled in **(5)**) and live, and — only if its repos'
+  stats are missing or older than 5 minutes — kicks a targeted
+  `runCollector({ installationId })` via `waitUntil`. An
   unowned/unknown/suspended `installation_id` (including the race where a
   webhook's insert hasn't landed yet) is a silent no-op — `installation_id`
   is never trusted for anything beyond this D1-verified lookup.
-- **(7)** `302` to `/dashboard`.
-- Every failure branch above: `400`, a generic error page (no internals
-  leaked), `gc_oauth_state` cleared, `Cache-Control: no-store`.
+- **(8)** `302` to `/dashboard`.
+- Every failure branch above (steps 1–4): `400`, a generic error page (no
+  internals leaked), `gc_oauth_state` cleared, `Cache-Control: no-store`.
+  Step 5 never fails the request — it only ever skips its own reconcile.
 
 ### `POST /auth/logout`
 
@@ -361,13 +382,18 @@ no stored token).
 - **No/invalid/expired session:** clears `gc_session`, `302` to
   `/auth/login`.
 - **Valid session:** one D1 read (`selectOwnedRepos`, scoped to the
-  session's `github_id`) → the dashboard page. `200`, HTML. Lists every
-  non-removed repo of every live installation this session owns, sorted
-  `(owner, name)`; excluded (`included = 0`) repos are still listed
-  (greyed, still selectable — re-enabling is only possible if they stay
-  visible). `lastSyncAt` is `MAX(stats.collected_at)` across those repos
-  (`null` if nothing has been collected yet). **No GitHub call in this
-  path** (edge-cache/attestation invariant — dashboard reads are D1-only).
+  session's `github_id` via the `installation_users` join) → the
+  dashboard page. `200`, HTML. Every installation the session administers
+  (personal account, plus any linked organizations) that is live yields a
+  group — **grouped by installation account, personal first, then orgs
+  alphabetical** (org-installations spec); an installation with zero live
+  repos still yields a group (empty repo list). Within a group, repos are
+  non-removed and sorted `(owner, name)`; excluded (`included = 0`) repos
+  are still listed (greyed, still selectable — re-enabling is only
+  possible if they stay visible). `lastSyncAt` is the max `collected_at`
+  across every repo across every group (`null` if nothing has been
+  collected yet). **No GitHub call in this path** (edge-cache/attestation
+  invariant — dashboard reads are D1-only).
 
 ### `GET /setup`
 
@@ -379,7 +405,7 @@ the same D1-verified kick logic).
 - **No session:** `302` to `/auth/login`.
 - **With session:** if an `installation_id` query param is present, same
   D1-verified ownership + freshness check and conditional collector kick
-  as `/auth/callback` step (6) above. `302` to `/dashboard`. **Never
+  as `/auth/callback` step (7) above. `302` to `/dashboard`. **Never
   errors user-visibly** — an unowned/unknown/suspended `installation_id`
   just skips the kick silently.
 

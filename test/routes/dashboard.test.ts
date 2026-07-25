@@ -51,9 +51,19 @@ function fixtureStats(repoId: number, overrides: Partial<StatsInput> = {}): Stat
   };
 }
 
+/** Test-only shortcut for seeding an `installation_users` link row (org-installations spec — ownership now flows through this table, not `installations.account_id`). */
+async function linkUser(installationId: number, githubUserId: number): Promise<void> {
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO installation_users (installation_id, github_user_id) VALUES (?1, ?2)',
+  )
+    .bind(installationId, githubUserId)
+    .run();
+}
+
 describe('GET /dashboard', () => {
   beforeEach(async () => {
     await env.DB.batch([
+      env.DB.prepare('DELETE FROM installation_users'),
       env.DB.prepare('DELETE FROM stats'),
       env.DB.prepare('DELETE FROM repos'),
       env.DB.prepare('DELETE FROM installations'),
@@ -106,6 +116,7 @@ describe('GET /dashboard', () => {
       accountId: 100,
       accountType: 'User',
     });
+    await linkUser(1, 100);
     await upsertRepos(env.DB, 1, [
       { id: 10, owner: 'wnston', name: 'alpha', private: true },
       { id: 11, owner: 'wnston', name: 'beta', private: false },
@@ -120,6 +131,7 @@ describe('GET /dashboard', () => {
       accountId: 200,
       accountType: 'User',
     });
+    await linkUser(2, 200);
     await upsertRepos(env.DB, 2, [
       { id: 20, owner: 'someone-else', name: 'private-repo', private: true },
     ]);
@@ -136,17 +148,180 @@ describe('GET /dashboard', () => {
     expect(html).not.toContain('someone-else');
   });
 
+  it('groups repos by installation account: `org` chip on orgs, none on personal (happy path)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 1,
+      accountLogin: 'wnston',
+      accountId: 100,
+      accountType: 'User',
+    });
+    await linkUser(1, 100);
+    await upsertRepos(env.DB, 1, [{ id: 10, owner: 'wnston', name: 'alpha', private: true }]);
+    await upsertStats(env.DB, fixtureStats(10, { collectedAt: new Date().toISOString() }));
+
+    // An org installation the same user administers via installation_users.
+    await upsertInstallation(env.DB, {
+      id: 5,
+      accountLogin: 'acme-labs',
+      accountId: 500,
+      accountType: 'Organization',
+    });
+    await linkUser(5, 100);
+    await upsertRepos(env.DB, 5, [{ id: 50, owner: 'acme-labs', name: 'omega', private: true }]);
+    await upsertStats(env.DB, fixtureStats(50, { collectedAt: new Date().toISOString() }));
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/dashboard`, {
+        headers: { Cookie: await sessionCookieHeader(100, 'wnston') },
+      })
+    ).text();
+
+    expect(html).toContain('acme-labs');
+    expect(html).toContain('omega');
+    // Exactly one `org` chip: the org group has it, the personal group does not.
+    expect(html.split('>org<').length - 1).toBe(1);
+    const personal = html.slice(html.indexOf('data-repo-scroll'), html.indexOf('acme-labs'));
+    expect(personal).not.toContain('>org<');
+  });
+
+  it('builds the per-account gear deep link from installation id and account type (happy path)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 1,
+      accountLogin: 'wnston',
+      accountId: 100,
+      accountType: 'User',
+    });
+    await linkUser(1, 100);
+    await upsertRepos(env.DB, 1, [{ id: 10, owner: 'wnston', name: 'alpha', private: true }]);
+    await upsertInstallation(env.DB, {
+      id: 5,
+      accountLogin: 'acme-labs',
+      accountId: 500,
+      accountType: 'Organization',
+    });
+    await linkUser(5, 100);
+    await upsertRepos(env.DB, 5, [{ id: 50, owner: 'acme-labs', name: 'omega', private: true }]);
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/dashboard`, {
+        headers: { Cookie: await sessionCookieHeader(100, 'wnston') },
+      })
+    ).text();
+
+    expect(html).toContain('href="https://github.com/settings/installations/1"');
+    expect(html).toContain(
+      'href="https://github.com/organizations/acme-labs/settings/installations/5"',
+    );
+    expect(html).toContain('title="Manage repos on GitHub"');
+  });
+
+  it('renders a stale repo in the stale token with a last-synced tooltip (edge case)', async () => {
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+    await upsertInstallation(env.DB, {
+      id: 1,
+      accountLogin: 'wnston',
+      accountId: 100,
+      accountType: 'User',
+    });
+    await linkUser(1, 100);
+    await upsertRepos(env.DB, 1, [{ id: 10, owner: 'wnston', name: 'alpha', private: true }]);
+    await upsertStats(env.DB, fixtureStats(10, { collectedAt: twoDaysAgo }));
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/dashboard`, {
+        headers: { Cookie: await sessionCookieHeader(100, 'wnston') },
+      })
+    ).text();
+
+    expect(html).toContain('2d ago');
+    expect(html).toContain('text-stale');
+    expect(html).toContain('title="Last synced ');
+    // The token, never a raw hex.
+    expect(html).not.toContain('#b57614');
+  });
+
+  it('renders a repo with no stats row as collecting, copy disabled (edge case)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 1,
+      accountLogin: 'wnston',
+      accountId: 100,
+      accountType: 'User',
+    });
+    await linkUser(1, 100);
+    await upsertRepos(env.DB, 1, [{ id: 10, owner: 'wnston', name: 'alpha', private: true }]);
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/dashboard`, {
+        headers: { Cookie: await sessionCookieHeader(100, 'wnston') },
+      })
+    ).text();
+
+    expect(html).toContain('collecting…');
+    // Included, so the enable toggle is on…
+    expect(html).toContain('aria-pressed="true"');
+    // …but there is nothing attested to copy yet.
+    expect(html.split('cursor-not-allowed opacity-45').length - 1).toBe(4);
+  });
+
+  it('disables the copy affordance for an excluded repo (edge case)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 1,
+      accountLogin: 'wnston',
+      accountId: 100,
+      accountType: 'User',
+    });
+    await linkUser(1, 100);
+    await upsertRepos(env.DB, 1, [{ id: 10, owner: 'wnston', name: 'alpha', private: true }]);
+    await upsertStats(env.DB, fixtureStats(10, { collectedAt: new Date().toISOString() }));
+    await env.DB.prepare('UPDATE repos SET included = 0 WHERE id = ?1').bind(10).run();
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/dashboard`, {
+        headers: { Cookie: await sessionCookieHeader(100, 'wnston') },
+      })
+    ).text();
+
+    expect(html).toContain('excluded');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html.split('cursor-not-allowed opacity-45').length - 1).toBe(4);
+  });
+
+  it('renders an installation with zero live repos as an empty group (edge case)', async () => {
+    await upsertInstallation(env.DB, {
+      id: 5,
+      accountLogin: 'acme-labs',
+      accountId: 500,
+      accountType: 'Organization',
+    });
+    await linkUser(5, 100);
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/dashboard`, {
+        headers: { Cookie: await sessionCookieHeader(100, 'wnston') },
+      })
+    ).text();
+
+    expect(html).toContain('acme-labs');
+    expect(html).toContain('no repos selected');
+    // The gear is the fix path, so it must still be reachable.
+    expect(html).toContain(
+      'href="https://github.com/organizations/acme-labs/settings/installations/5"',
+    );
+  });
+
   it('renders the empty state when the tenant has no repos (edge case)', async () => {
     const response = await SELF.fetch(`${ORIGIN}/dashboard`, {
       headers: { Cookie: await sessionCookieHeader(999999, 'nobody') },
     });
     expect(response.status).toBe(200);
+    expect(await response.text()).toContain('No installations yet');
   });
 });
 
 describe('GET /setup', () => {
   beforeEach(async () => {
     await env.DB.batch([
+      env.DB.prepare('DELETE FROM installation_users'),
       env.DB.prepare('DELETE FROM stats'),
       env.DB.prepare('DELETE FROM repos'),
       env.DB.prepare('DELETE FROM installations'),
@@ -170,6 +345,7 @@ describe('GET /setup', () => {
       accountId: 500,
       accountType: 'User',
     });
+    await linkUser(5, 500);
     await upsertRepos(env.DB, 5, [{ id: 50, owner: 'wnston', name: 'repo-a', private: true }]);
 
     const graphqlCalls: string[] = [];
@@ -204,6 +380,7 @@ describe('GET /setup', () => {
       accountId: 600,
       accountType: 'User',
     });
+    await linkUser(6, 600);
     await upsertRepos(env.DB, 6, [
       { id: 60, owner: 'someone-else', name: 'repo-b', private: true },
     ]);
@@ -243,6 +420,7 @@ describe('GET /setup', () => {
       accountId: 700,
       accountType: 'User',
     });
+    await linkUser(7, 700);
     await upsertRepos(env.DB, 7, [{ id: 70, owner: 'wnston', name: 'repo-c', private: true }]);
     await suspendInstallation(env.DB, 7, '2026-07-22T00:00:00Z');
 
@@ -264,6 +442,7 @@ describe('GET /setup', () => {
 describe('POST /repos/:id/settings', () => {
   beforeEach(async () => {
     await env.DB.batch([
+      env.DB.prepare('DELETE FROM installation_users'),
       env.DB.prepare('DELETE FROM stats'),
       env.DB.prepare('DELETE FROM repos'),
       env.DB.prepare('DELETE FROM installations'),
@@ -277,6 +456,7 @@ describe('POST /repos/:id/settings', () => {
       accountId: 1000,
       accountType: 'User',
     });
+    await linkUser(10, 1000);
     await upsertRepos(env.DB, 10, [{ id: 100, owner: 'wnston', name: 'repo-a', private: true }]);
 
     const response = await SELF.fetch(`${ORIGIN}/repos/100/settings`, {
@@ -299,6 +479,7 @@ describe('POST /repos/:id/settings', () => {
       accountId: 1100,
       accountType: 'User',
     });
+    await linkUser(11, 1100);
     await upsertRepos(env.DB, 11, [{ id: 110, owner: 'wnston', name: 'repo-b', private: true }]);
 
     const response = await SELF.fetch(`${ORIGIN}/repos/110/settings`, {
@@ -326,6 +507,7 @@ describe('POST /repos/:id/settings', () => {
       accountId: 1700,
       accountType: 'User',
     });
+    await linkUser(17, 1700);
     await upsertRepos(env.DB, 17, [{ id: 170, owner: 'wnston', name: 'repo-g', private: true }]);
 
     const cache = caches.default;
@@ -384,6 +566,7 @@ describe('POST /repos/:id/settings', () => {
       accountId: 1200,
       accountType: 'User',
     });
+    await linkUser(12, 1200);
     await upsertRepos(env.DB, 12, [{ id: 120, owner: 'wnston', name: 'repo-c', private: true }]);
 
     const response = await SELF.fetch(`${ORIGIN}/repos/120/settings`, {
@@ -405,6 +588,7 @@ describe('POST /repos/:id/settings', () => {
       accountId: 1300,
       accountType: 'User',
     });
+    await linkUser(13, 1300);
     await upsertRepos(env.DB, 13, [{ id: 130, owner: 'wnston', name: 'repo-d', private: true }]);
 
     const response = await SELF.fetch(`${ORIGIN}/repos/130/settings`, {
@@ -426,6 +610,7 @@ describe('POST /repos/:id/settings', () => {
       accountId: 1400,
       accountType: 'User',
     });
+    await linkUser(14, 1400);
     await upsertRepos(env.DB, 14, [{ id: 140, owner: 'wnston', name: 'repo-e', private: true }]);
 
     const response = await SELF.fetch(`${ORIGIN}/repos/140/settings`, {
@@ -446,6 +631,7 @@ describe('POST /repos/:id/settings', () => {
       accountId: 1500,
       accountType: 'User',
     });
+    await linkUser(15, 1500);
     await upsertRepos(env.DB, 15, [{ id: 150, owner: 'tenant-a', name: 'repo-f', private: true }]);
     await upsertInstallation(env.DB, {
       id: 16,
@@ -453,6 +639,7 @@ describe('POST /repos/:id/settings', () => {
       accountId: 1600,
       accountType: 'User',
     });
+    await linkUser(16, 1600);
 
     const response = await SELF.fetch(`${ORIGIN}/repos/150/settings`, {
       method: 'POST',
@@ -487,6 +674,7 @@ describe('POST /repos/:id/settings', () => {
 describe('POST /repos/:id/refresh', () => {
   beforeEach(async () => {
     await env.DB.batch([
+      env.DB.prepare('DELETE FROM installation_users'),
       env.DB.prepare('DELETE FROM stats'),
       env.DB.prepare('DELETE FROM repos'),
       env.DB.prepare('DELETE FROM installations'),
@@ -509,6 +697,7 @@ describe('POST /repos/:id/refresh', () => {
       accountId: 2000,
       accountType: 'User',
     });
+    await linkUser(20, 2000);
     await upsertRepos(env.DB, 20, [{ id: 200, owner: 'tenant-a', name: 'repo-a', private: true }]);
 
     const fetchMock = vi.fn(async () => {
@@ -531,6 +720,7 @@ describe('POST /repos/:id/refresh', () => {
       accountId: 2100,
       accountType: 'User',
     });
+    await linkUser(21, 2100);
     await upsertRepos(env.DB, 21, [{ id: 210, owner: 'wnston', name: 'repo-b', private: true }]);
     await upsertStats(env.DB, fixtureStats(210, { collectedAt: new Date().toISOString() }));
 
@@ -555,6 +745,7 @@ describe('POST /repos/:id/refresh', () => {
       accountId: 2200,
       accountType: 'User',
     });
+    await linkUser(22, 2200);
     await upsertRepos(env.DB, 22, [{ id: 220, owner: 'wnston', name: 'repo-c', private: true }]);
     await upsertStats(env.DB, fixtureStats(220, { collectedAt: '2020-01-01T00:00:00Z' }));
 
@@ -594,6 +785,7 @@ describe('POST /repos/:id/refresh', () => {
       accountId: 2300,
       accountType: 'User',
     });
+    await linkUser(23, 2300);
     await upsertRepos(env.DB, 23, [{ id: 230, owner: 'wnston', name: 'repo-d', private: true }]);
     await upsertStats(env.DB, fixtureStats(230, { collectedAt: '2020-01-01T00:00:00Z' }));
 

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Env } from '../env';
 import { GITHUB_USER_AGENT } from '../collector/github';
+import { replaceInstallationLinks } from '../lib/db';
 import { kickPostInstallCollect, parseInstallationId } from '../lib/postInstall';
 import {
   STATE_COOKIE_NAME,
@@ -17,7 +18,9 @@ import { AuthErrorPage } from '../pages/auth';
  * `GET /auth/login`, `GET /auth/callback`, `POST /auth/logout` (spec
  * overview §Route contracts). GitHub calls happen ONLY in `/auth/callback`
  * here (sanctioned by cloudflare-workers rules) — the exchanged user token
- * is used once for identity and discarded, never stored or logged
+ * now serves exactly two requests inside this one handler (identity, then
+ * installation discovery for `installation_users`) and is still never
+ * stored, never logged, never placed in the session, never written to D1
  * (architectures/attestation, CRITICAL). Owner routes: always `no-store`,
  * never `edgeCache`, no CORS.
  */
@@ -26,6 +29,7 @@ export const auth = new Hono<{ Bindings: Env }>();
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
 const GITHUB_USER_URL = 'https://api.github.com/user';
+const GITHUB_USER_INSTALLATIONS_URL = 'https://api.github.com/user/installations';
 
 interface GithubTokenResponse {
   access_token?: string;
@@ -78,6 +82,40 @@ async function fetchGithubIdentity(accessToken: string): Promise<GithubIdentity 
   const body = (await response.json()) as GithubUserResponse;
   if (typeof body.id !== 'number' || typeof body.login !== 'string') return null;
   return { id: body.id, login: body.login };
+}
+
+interface GithubUserInstallationsResponse {
+  installations?: unknown;
+}
+
+/**
+ * Fetches the ids of every installation the token's holder administers
+ * (org-installations spec §Step 4) — `GET /user/installations`, single
+ * page, `per_page=100` (no pagination loop: >100 installations for one
+ * user is not an MVP case, YAGNI). The token is used for this single
+ * request only — same discipline as `fetchGithubIdentity`, never stored,
+ * never logged. Parses defensively: keeps only entries with a numeric
+ * `id`; any non-2xx response or unexpected shape returns `null` (never
+ * throws) so the caller can fail open and keep existing links.
+ */
+async function fetchUserInstallationIds(accessToken: string): Promise<number[] | null> {
+  const response = await fetch(`${GITHUB_USER_INSTALLATIONS_URL}?per_page=100`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/vnd.github+json',
+      'User-Agent': GITHUB_USER_AGENT,
+    },
+  });
+  if (!response.ok) return null;
+  const body = (await response.json()) as GithubUserInstallationsResponse;
+  if (!Array.isArray(body.installations)) return null;
+  const ids: number[] = [];
+  for (const entry of body.installations) {
+    if (entry && typeof entry === 'object' && typeof (entry as { id?: unknown }).id === 'number') {
+      ids.push((entry as { id: number }).id);
+    }
+  }
+  return ids;
 }
 
 /**
@@ -158,7 +196,19 @@ auth.get('/auth/callback', async (c) => {
     return authErrorResponse();
   }
 
-  // (5) set the session cookie, clear the state cookie.
+  // (5) org-installations spec: reconcile `installation_users` from
+  // `GET /user/installations` using the same one-time token, then discard
+  // it — this is its second and final use in this handler. Failure
+  // semantics are mandatory: a `null` (any GitHub 5xx or malformed body)
+  // skips the refresh entirely and keeps the existing links — sign-in
+  // still succeeds. A transient GitHub error must never de-authorize a
+  // user or blank their dashboard.
+  const installationIds = await fetchUserInstallationIds(accessToken);
+  if (installationIds !== null) {
+    await replaceInstallationLinks(c.env.DB, identity.id, installationIds);
+  }
+
+  // (6) set the session cookie, clear the state cookie.
   const sessionSetCookie = await createSessionCookie(
     { githubId: identity.id, login: identity.login },
     c.env.SESSION_SECRET,
@@ -167,14 +217,15 @@ auth.get('/auth/callback', async (c) => {
   c.header('Set-Cookie', clearStateCookie(), { append: true });
   c.header('Cache-Control', 'no-store');
 
-  // (6) Decision 9: both GitHub redirect shapes land here when
-  // "Request user authorization on install" is enabled.
+  // (7) Decision 9: both GitHub redirect shapes land here when
+  // "Request user authorization on install" is enabled. The links just
+  // reconciled in (5) are what makes this resolve for org installations.
   const installationId = parseInstallationId(c.req.query('installation_id'));
   if (installationId !== null && c.req.query('setup_action')) {
     await kickPostInstallCollect(c.env, c.executionCtx, identity.id, installationId);
   }
 
-  // (7)
+  // (8)
   return c.redirect('/dashboard', 302);
 });
 

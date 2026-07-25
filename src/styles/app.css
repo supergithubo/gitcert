@@ -41,6 +41,12 @@
   --panel2: #f4f2ec;
   --field: #faf9f6;
   --accent: #2f6d4f;
+  /*
+   * Stale amber (dashboard repo rows, comp Dashboard.dc.html `amber`):
+   * a repo whose stats are older than the 24h badge stale threshold.
+   * Deliberately NOT an error color — a stale badge is a designed state.
+   */
+  --stale: #b57614;
   --avatar: #e9e7e0;
   --dot: #d9d6cd;
   --nav: rgba(250, 249, 246, 0.9);
@@ -63,6 +69,7 @@
     --panel2: #26241f;
     --field: #1b1a18;
     --accent: #5aa07d;
+    --stale: #e3b341;
     --avatar: #2f2d29;
     --dot: #3a3833;
     --nav: rgba(27, 26, 24, 0.9);
@@ -85,6 +92,7 @@
   --panel2: #26241f;
   --field: #1b1a18;
   --accent: #5aa07d;
+  --stale: #e3b341;
   --avatar: #2f2d29;
   --dot: #3a3833;
   --nav: rgba(27, 26, 24, 0.9);
@@ -211,6 +219,7 @@
   --color-panel2: var(--panel2);
   --color-field: var(--field);
   --color-accent: var(--accent);
+  --color-stale: var(--stale);
   --color-avatar: var(--avatar);
   --color-dot: var(--dot);
   --color-nav: var(--nav);
@@ -271,4 +280,62 @@ body {
 
 [data-repo-scroll]::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/*
+ * Dashboard repo-row motion (comp Dashboard.dc.html helmet CSS). Driven by
+ * data attributes rather than utility classes so the inline builder script
+ * toggles one attribute (as it already does for `data-copied`) instead of
+ * juggling class lists.
+ */
+@keyframes gcpulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+
+/* `collecting…` rows breathe until the first stats row lands. */
+[data-gc-pulse] {
+  animation: gcpulse 1.6s ease-in-out infinite;
+}
+
+@keyframes gcspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Set by the script on a per-repo sync icon while its POST is in flight. */
+[data-gc-spin] {
+  animation: gcspin 0.9s linear infinite;
+}
+
+[data-gear],
+[data-sync] {
+  transform-origin: center;
+  transition: transform 0.6s cubic-bezier(0.34, 1.42, 0.64, 1);
+}
+
+a:hover [data-gear] {
+  transform: rotate(180deg);
+}
+
+button:hover [data-sync] {
+  transform: rotate(50deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gc-pulse],
+  [data-gc-spin] {
+    animation: none;
+  }
+
+  [data-gear],
+  [data-sync] {
+    transition: none;
+  }
 }

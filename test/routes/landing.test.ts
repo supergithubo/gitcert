@@ -19,9 +19,19 @@ function findSetCookie(response: Response, name: string): string | undefined {
   return response.headers.getSetCookie().find((value) => value.startsWith(`${name}=`));
 }
 
+/** Test-only shortcut for seeding an `installation_users` link row (org-installations spec — ownership now flows through this table, not `installations.account_id`). */
+async function linkUser(installationId: number, githubUserId: number): Promise<void> {
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO installation_users (installation_id, github_user_id) VALUES (?1, ?2)',
+  )
+    .bind(installationId, githubUserId)
+    .run();
+}
+
 describe('GET /', () => {
   beforeEach(async () => {
     await env.DB.batch([
+      env.DB.prepare('DELETE FROM installation_users'),
       env.DB.prepare('DELETE FROM stats'),
       env.DB.prepare('DELETE FROM repos'),
       env.DB.prepare('DELETE FROM installations'),
@@ -52,6 +62,7 @@ describe('GET /', () => {
       accountId: 9000,
       accountType: 'User',
     });
+    await linkUser(900, 9000);
     await upsertRepos(env.DB, 900, [
       { id: 9001, owner: 'wnston', name: 'alpha', private: true },
       { id: 9002, owner: 'wnston', name: 'beta', private: true },
@@ -161,6 +172,7 @@ describe('GET /', () => {
       accountId: 9100,
       accountType: 'User',
     });
+    await linkUser(901, 9100);
 
     const response = await SELF.fetch(`${ORIGIN}/`, {
       headers: { Cookie: await sessionCookieHeader(9100, 'nobody') },
@@ -177,6 +189,7 @@ describe('GET /', () => {
       accountId: 9200,
       accountType: 'User',
     });
+    await linkUser(902, 9200);
     await upsertRepos(env.DB, 902, [
       { id: 9201, owner: 'wnston', name: 'excluded-repo', private: true },
       { id: 9202, owner: 'wnston', name: 'not-yet-collected', private: true },

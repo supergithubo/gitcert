@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   countAttestedRepos,
   markRepoRemoved,
+  replaceInstallationLinks,
   selectInstallation,
   selectOldestCollectedAt,
   selectOwnedRepo,
@@ -42,11 +43,21 @@ function fixtureStats(repoId: number, overrides: Partial<StatsInput> = {}): Stat
   };
 }
 
+/** Test-only shortcut for seeding an `installation_users` link row (the reconcile itself is unit-tested via `replaceInstallationLinks`). */
+async function linkUser(installationId: number, githubUserId: number): Promise<void> {
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO installation_users (installation_id, github_user_id) VALUES (?1, ?2)',
+  )
+    .bind(installationId, githubUserId)
+    .run();
+}
+
 describe('db.ts', () => {
   beforeEach(async () => {
     // Isolated per-test D1 (migrations applied in test/setup.ts) — clear
     // rows between tests instead of relying on isolation across files only.
     await env.DB.batch([
+      env.DB.prepare('DELETE FROM installation_users'),
       env.DB.prepare('DELETE FROM stats'),
       env.DB.prepare('DELETE FROM repos'),
       env.DB.prepare('DELETE FROM installations'),
@@ -468,13 +479,14 @@ describe('db.ts', () => {
   });
 
   describe('selectOwnedRepos', () => {
-    it('lists only the tenant repos, sorted (owner, name), with lastSyncAt from MAX(collected_at) (happy path)', async () => {
+    it('lists only the linked tenant repos, sorted (owner, name), with lastSyncAt derived from collectedAt (happy path)', async () => {
       await upsertInstallation(env.DB, {
         id: 30,
         accountLogin: 'wnston',
         accountId: 3000,
         accountType: 'User',
       });
+      await linkUser(30, 3000);
       await upsertRepos(env.DB, 30, [
         { id: 301, owner: 'wnston', name: 'zeta', private: true },
         { id: 302, owner: 'wnston', name: 'alpha', private: false },
@@ -482,50 +494,81 @@ describe('db.ts', () => {
       await upsertStats(env.DB, fixtureStats(301, { collectedAt: '2026-07-20T00:00:00Z' }));
       await upsertStats(env.DB, fixtureStats(302, { collectedAt: '2026-07-22T00:00:00Z' }));
 
-      // A different tenant's repo must never appear.
+      // A different tenant's repo must never appear, even unlinked-installation noise.
       await upsertInstallation(env.DB, {
         id: 31,
         accountLogin: 'other',
         accountId: 3100,
         accountType: 'User',
       });
+      await linkUser(31, 3100);
       await upsertRepos(env.DB, 31, [{ id: 310, owner: 'other', name: 'repo', private: true }]);
 
       const result = await selectOwnedRepos(env.DB, 3000);
       expect(result).toEqual({
-        repos: [
-          { id: 302, owner: 'wnston', name: 'alpha', private: false, included: true },
-          { id: 301, owner: 'wnston', name: 'zeta', private: true, included: true },
+        accounts: [
+          {
+            installationId: 30,
+            accountLogin: 'wnston',
+            accountType: 'User',
+            repos: [
+              {
+                id: 302,
+                owner: 'wnston',
+                name: 'alpha',
+                private: false,
+                included: true,
+                collectedAt: '2026-07-22T00:00:00Z',
+              },
+              {
+                id: 301,
+                owner: 'wnston',
+                name: 'zeta',
+                private: true,
+                included: true,
+                collectedAt: '2026-07-20T00:00:00Z',
+              },
+            ],
+          },
         ],
         lastSyncAt: '2026-07-22T00:00:00Z',
       });
     });
 
-    it('still lists excluded (included = 0) rows — greyed, not hidden (Decision 7)', async () => {
+    it('still lists excluded (included = 0) rows — greyed, not hidden (Decision 7) — and null collectedAt when uncollected', async () => {
       await upsertInstallation(env.DB, {
         id: 32,
         accountLogin: 'wnston',
         accountId: 3200,
         accountType: 'User',
       });
+      await linkUser(32, 3200);
       await upsertRepos(env.DB, 32, [
         { id: 320, owner: 'wnston', name: 'excluded', private: true },
       ]);
       await env.DB.prepare('UPDATE repos SET included = 0 WHERE id = ?1').bind(320).run();
 
       const result = await selectOwnedRepos(env.DB, 3200);
-      expect(result.repos).toEqual([
-        { id: 320, owner: 'wnston', name: 'excluded', private: true, included: false },
+      expect(result.accounts[0]?.repos).toEqual([
+        {
+          id: 320,
+          owner: 'wnston',
+          name: 'excluded',
+          private: true,
+          included: false,
+          collectedAt: null,
+        },
       ]);
     });
 
-    it('excludes removed repos and repos of suspended installations', async () => {
+    it('excludes removed repos and every repo of a suspended installation, even when linked', async () => {
       await upsertInstallation(env.DB, {
         id: 33,
         accountLogin: 'wnston',
         accountId: 3300,
         accountType: 'User',
       });
+      await linkUser(33, 3300);
       await upsertRepos(env.DB, 33, [
         { id: 330, owner: 'wnston', name: 'removed-repo', private: true },
       ]);
@@ -537,31 +580,141 @@ describe('db.ts', () => {
         accountId: 3300,
         accountType: 'User',
       });
+      await linkUser(34, 3300);
       await upsertRepos(env.DB, 34, [
         { id: 340, owner: 'wnston-suspended', name: 'suspended-repo', private: true },
       ]);
       await suspendInstallation(env.DB, 34, '2026-07-22T00:00:00Z');
 
       const result = await selectOwnedRepos(env.DB, 3300);
-      expect(result).toEqual({ repos: [], lastSyncAt: null });
+      // Installation 34 is suspended, so it never yields a group at all
+      // (byte-identical to unlinked). Installation 33 IS live and linked,
+      // but its only repo is removed — this also covers "installation
+      // with zero live repos still yields a group with `repos: []`"
+      // (Decision D2).
+      expect(result).toEqual({
+        accounts: [{ installationId: 33, accountLogin: 'wnston', accountType: 'User', repos: [] }],
+        lastSyncAt: null,
+      });
     });
 
-    it('returns an empty result and null lastSyncAt for a tenant with no repos (edge case)', async () => {
+    it('an installation with zero live repos yields a group with an empty repos array (Decision D2, edge case)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 35,
+        accountLogin: 'wnston',
+        accountId: 3500,
+        accountType: 'User',
+      });
+      await linkUser(35, 3500);
+      // No repos at all.
+
+      await expect(selectOwnedRepos(env.DB, 3500)).resolves.toEqual({
+        accounts: [{ installationId: 35, accountLogin: 'wnston', accountType: 'User', repos: [] }],
+        lastSyncAt: null,
+      });
+    });
+
+    it('groups a linked organization installation separately, ordered personal-first then orgs alphabetical (happy path — org installations)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 36,
+        accountLogin: 'wnston',
+        accountId: 3600,
+        accountType: 'User',
+      });
+      await linkUser(36, 3600);
+      await upsertRepos(env.DB, 36, [
+        { id: 360, owner: 'wnston', name: 'personal-repo', private: true },
+      ]);
+
+      await upsertInstallation(env.DB, {
+        id: 37,
+        accountLogin: 'zzz-org',
+        accountId: 9999,
+        accountType: 'Organization',
+      });
+      await linkUser(37, 3600);
+      await upsertRepos(env.DB, 37, [{ id: 370, owner: 'zzz-org', name: 'z-repo', private: true }]);
+
+      await upsertInstallation(env.DB, {
+        id: 38,
+        accountLogin: 'aaa-org',
+        accountId: 9998,
+        accountType: 'Organization',
+      });
+      await linkUser(38, 3600);
+      await upsertRepos(env.DB, 38, [{ id: 380, owner: 'aaa-org', name: 'a-repo', private: true }]);
+
+      const result = await selectOwnedRepos(env.DB, 3600);
+      expect(
+        result.accounts.map((a) => ({
+          installationId: a.installationId,
+          accountType: a.accountType,
+          accountLogin: a.accountLogin,
+        })),
+      ).toEqual([
+        { installationId: 36, accountType: 'User', accountLogin: 'wnston' },
+        { installationId: 38, accountType: 'Organization', accountLogin: 'aaa-org' },
+        { installationId: 37, accountType: 'Organization', accountLogin: 'zzz-org' },
+      ]);
+    });
+
+    it('an organization installation without a link is invisible even though repos exist (permission boundary)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 39,
+        accountLogin: 'other-org',
+        accountId: 8888,
+        accountType: 'Organization',
+      });
+      // Deliberately NOT linking installation 39 to githubUserId 3700.
+      await upsertRepos(env.DB, 39, [{ id: 390, owner: 'other-org', name: 'repo', private: true }]);
+
+      await expect(selectOwnedRepos(env.DB, 3700)).resolves.toEqual({
+        accounts: [],
+        lastSyncAt: null,
+      });
+    });
+
+    it('a second user’s link to a different org does not expose the first user’s org (permission boundary — cross-tenant org isolation)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 45,
+        accountLogin: 'acme',
+        accountId: 7000,
+        accountType: 'Organization',
+      });
+      await linkUser(45, 4501);
+      await upsertRepos(env.DB, 45, [{ id: 450, owner: 'acme', name: 'repo', private: true }]);
+
+      await upsertInstallation(env.DB, {
+        id: 46,
+        accountLogin: 'beta',
+        accountId: 7100,
+        accountType: 'Organization',
+      });
+      await linkUser(46, 4502);
+      await upsertRepos(env.DB, 46, [{ id: 460, owner: 'beta', name: 'repo', private: true }]);
+
+      const result = await selectOwnedRepos(env.DB, 4501);
+      expect(result.accounts).toHaveLength(1);
+      expect(result.accounts[0]?.installationId).toBe(45);
+    });
+
+    it('returns an empty result for a tenant with no linked installations (edge case)', async () => {
       await expect(selectOwnedRepos(env.DB, 999999)).resolves.toEqual({
-        repos: [],
+        accounts: [],
         lastSyncAt: null,
       });
     });
   });
 
   describe('selectOwnedRepo', () => {
-    it('returns the repo detail for an owned, live repo (happy path)', async () => {
+    it('returns the repo detail for a linked, live personal repo (happy path)', async () => {
       await upsertInstallation(env.DB, {
         id: 40,
         accountLogin: 'wnston',
         accountId: 4000,
         accountType: 'User',
       });
+      await linkUser(40, 4000);
       await upsertRepos(env.DB, 40, [{ id: 400, owner: 'wnston', name: 'repo-a', private: true }]);
       await upsertStats(env.DB, fixtureStats(400, { collectedAt: '2026-07-22T00:00:00Z' }));
 
@@ -574,6 +727,38 @@ describe('db.ts', () => {
       });
     });
 
+    it('returns the repo detail for a linked org installation’s repo (happy path — org installations)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 47,
+        accountLogin: 'acme',
+        accountId: 7200,
+        accountType: 'Organization',
+      });
+      await linkUser(47, 4701);
+      await upsertRepos(env.DB, 47, [{ id: 470, owner: 'acme', name: 'repo-org', private: true }]);
+
+      await expect(selectOwnedRepo(env.DB, 470, 4701)).resolves.toEqual({
+        id: 470,
+        owner: 'acme',
+        name: 'repo-org',
+        installationId: 47,
+        collectedAt: null,
+      });
+    });
+
+    it('returns null for an org installation’s repo when the caller has no link (permission boundary — unlinked-org reject)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 48,
+        accountLogin: 'acme',
+        accountId: 7300,
+        accountType: 'Organization',
+      });
+      // No link for githubUserId 4801.
+      await upsertRepos(env.DB, 48, [{ id: 480, owner: 'acme', name: 'repo-org', private: true }]);
+
+      await expect(selectOwnedRepo(env.DB, 480, 4801)).resolves.toBeNull();
+    });
+
     it('returns null for a different tenant’s repo (permission boundary — cross-tenant)', async () => {
       await upsertInstallation(env.DB, {
         id: 41,
@@ -581,6 +766,7 @@ describe('db.ts', () => {
         accountId: 4100,
         accountType: 'User',
       });
+      await linkUser(41, 4100);
       await upsertRepos(env.DB, 41, [{ id: 410, owner: 'wnston', name: 'repo-b', private: true }]);
 
       await expect(selectOwnedRepo(env.DB, 410, 999999)).resolves.toBeNull();
@@ -597,19 +783,21 @@ describe('db.ts', () => {
         accountId: 4200,
         accountType: 'User',
       });
+      await linkUser(42, 4200);
       await upsertRepos(env.DB, 42, [{ id: 420, owner: 'wnston', name: 'repo-c', private: true }]);
       await markRepoRemoved(env.DB, 420, '2026-07-22T00:00:00Z');
 
       await expect(selectOwnedRepo(env.DB, 420, 4200)).resolves.toBeNull();
     });
 
-    it('returns null when the owning installation is suspended', async () => {
+    it('returns null when the owning installation is suspended, even when linked', async () => {
       await upsertInstallation(env.DB, {
         id: 43,
         accountLogin: 'wnston',
         accountId: 4300,
         accountType: 'User',
       });
+      await linkUser(43, 4300);
       await upsertRepos(env.DB, 43, [{ id: 430, owner: 'wnston', name: 'repo-d', private: true }]);
       await suspendInstallation(env.DB, 43, '2026-07-22T00:00:00Z');
 
@@ -625,6 +813,7 @@ describe('db.ts', () => {
         accountId: 5000,
         accountType: 'User',
       });
+      await linkUser(50, 5000);
       await upsertRepos(env.DB, 50, [{ id: 500, owner: 'wnston', name: 'repo-e', private: true }]);
 
       await expect(updateRepoIncluded(env.DB, 500, false, 5000)).resolves.toBe(1);
@@ -640,6 +829,40 @@ describe('db.ts', () => {
       expect(row?.included).toBe(1);
     });
 
+    it('toggles a linked org installation’s repo (happy path — linked-org pass)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 53,
+        accountLogin: 'acme',
+        accountId: 5300,
+        accountType: 'Organization',
+      });
+      await linkUser(53, 5301);
+      await upsertRepos(env.DB, 53, [{ id: 530, owner: 'acme', name: 'repo-org', private: true }]);
+
+      await expect(updateRepoIncluded(env.DB, 530, false, 5301)).resolves.toBe(1);
+      const row = await env.DB.prepare('SELECT included FROM repos WHERE id = ?1')
+        .bind(530)
+        .first<{ included: number }>();
+      expect(row?.included).toBe(0);
+    });
+
+    it('returns 0 changes for an org installation’s repo when the caller has no link (permission boundary — unlinked-org reject)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 54,
+        accountLogin: 'acme',
+        accountId: 5400,
+        accountType: 'Organization',
+      });
+      // No link for githubUserId 5401.
+      await upsertRepos(env.DB, 54, [{ id: 540, owner: 'acme', name: 'repo-org', private: true }]);
+
+      await expect(updateRepoIncluded(env.DB, 540, false, 5401)).resolves.toBe(0);
+      const row = await env.DB.prepare('SELECT included FROM repos WHERE id = ?1')
+        .bind(540)
+        .first<{ included: number }>();
+      expect(row?.included).toBe(1);
+    });
+
     it('returns 0 changes and does not mutate a different tenant’s repo (permission boundary — cross-tenant settings)', async () => {
       await upsertInstallation(env.DB, {
         id: 51,
@@ -647,6 +870,7 @@ describe('db.ts', () => {
         accountId: 5100,
         accountType: 'User',
       });
+      await linkUser(51, 5100);
       await upsertRepos(env.DB, 51, [{ id: 510, owner: 'wnston', name: 'repo-f', private: true }]);
 
       await expect(updateRepoIncluded(env.DB, 510, false, 999999)).resolves.toBe(0);
@@ -667,6 +891,7 @@ describe('db.ts', () => {
         accountId: 5200,
         accountType: 'User',
       });
+      await linkUser(52, 5200);
       await upsertRepos(env.DB, 52, [{ id: 520, owner: 'wnston', name: 'repo-g', private: true }]);
       await markRepoRemoved(env.DB, 520, '2026-07-22T00:00:00Z');
 
@@ -682,6 +907,7 @@ describe('db.ts', () => {
         accountId: 6000,
         accountType: 'User',
       });
+      await linkUser(60, 6000);
       await upsertRepos(env.DB, 60, [
         { id: 600, owner: 'wnston', name: 'repo-a', private: true },
         { id: 601, owner: 'wnston', name: 'repo-b', private: true },
@@ -692,6 +918,34 @@ describe('db.ts', () => {
       await expect(countAttestedRepos(env.DB, 6000)).resolves.toBe(2);
     });
 
+    it('counts a linked org installation’s attested repos (happy path — linked-org pass)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 65,
+        accountLogin: 'acme',
+        accountId: 6500,
+        accountType: 'Organization',
+      });
+      await linkUser(65, 6501);
+      await upsertRepos(env.DB, 65, [{ id: 650, owner: 'acme', name: 'repo-org', private: true }]);
+      await upsertStats(env.DB, fixtureStats(650));
+
+      await expect(countAttestedRepos(env.DB, 6501)).resolves.toBe(1);
+    });
+
+    it('excludes an org installation’s repos when the caller has no link (permission boundary — unlinked-org reject)', async () => {
+      await upsertInstallation(env.DB, {
+        id: 66,
+        accountLogin: 'acme',
+        accountId: 6600,
+        accountType: 'Organization',
+      });
+      // No link for githubUserId 6601.
+      await upsertRepos(env.DB, 66, [{ id: 660, owner: 'acme', name: 'repo-org', private: true }]);
+      await upsertStats(env.DB, fixtureStats(660));
+
+      await expect(countAttestedRepos(env.DB, 6601)).resolves.toBe(0);
+    });
+
     it('excludes a repo with included = 0 even though it has a stats row', async () => {
       await upsertInstallation(env.DB, {
         id: 61,
@@ -699,6 +953,7 @@ describe('db.ts', () => {
         accountId: 6100,
         accountType: 'User',
       });
+      await linkUser(61, 6100);
       await upsertRepos(env.DB, 61, [{ id: 610, owner: 'wnston', name: 'repo-c', private: true }]);
       await upsertStats(env.DB, fixtureStats(610));
       await env.DB.prepare('UPDATE repos SET included = 0 WHERE id = ?1').bind(610).run();
@@ -713,6 +968,7 @@ describe('db.ts', () => {
         accountId: 6200,
         accountType: 'User',
       });
+      await linkUser(62, 6200);
       await upsertRepos(env.DB, 62, [{ id: 620, owner: 'wnston', name: 'repo-d', private: true }]);
       await upsertStats(env.DB, fixtureStats(620));
       await markRepoRemoved(env.DB, 620, '2026-07-22T00:00:00Z');
@@ -720,13 +976,14 @@ describe('db.ts', () => {
       await expect(countAttestedRepos(env.DB, 6200)).resolves.toBe(0);
     });
 
-    it('excludes every repo of a suspended installation even though they have stats rows', async () => {
+    it('excludes every repo of a suspended installation even when linked and stats exist', async () => {
       await upsertInstallation(env.DB, {
         id: 63,
         accountLogin: 'wnston',
         accountId: 6300,
         accountType: 'User',
       });
+      await linkUser(63, 6300);
       await upsertRepos(env.DB, 63, [{ id: 630, owner: 'wnston', name: 'repo-e', private: true }]);
       await upsertStats(env.DB, fixtureStats(630));
       await suspendInstallation(env.DB, 63, '2026-07-22T00:00:00Z');
@@ -741,13 +998,51 @@ describe('db.ts', () => {
         accountId: 6400,
         accountType: 'User',
       });
+      await linkUser(64, 6400);
       await upsertRepos(env.DB, 64, [{ id: 640, owner: 'wnston', name: 'repo-f', private: true }]);
 
       await expect(countAttestedRepos(env.DB, 6400)).resolves.toBe(0);
     });
 
-    it('returns 0 for an unknown account id (edge case)', async () => {
+    it('returns 0 for an unlinked/unknown github user id (edge case)', async () => {
       await expect(countAttestedRepos(env.DB, 999999)).resolves.toBe(0);
+    });
+  });
+
+  describe('replaceInstallationLinks', () => {
+    async function linksFor(githubUserId: number): Promise<number[]> {
+      const result = await env.DB.prepare(
+        'SELECT installation_id FROM installation_users WHERE github_user_id = ?1 ORDER BY installation_id',
+      )
+        .bind(githubUserId)
+        .all<{ installation_id: number }>();
+      return result.results.map((row) => row.installation_id);
+    }
+
+    it('inserts fresh links for a user with none yet (happy path)', async () => {
+      await replaceInstallationLinks(env.DB, 7000, [100, 101]);
+      await expect(linksFor(7000)).resolves.toEqual([100, 101]);
+    });
+
+    it('reconciles to a smaller set, removing links no longer present (happy path — remove)', async () => {
+      await replaceInstallationLinks(env.DB, 7001, [200, 201, 202]);
+      await replaceInstallationLinks(env.DB, 7001, [201]);
+      await expect(linksFor(7001)).resolves.toEqual([201]);
+    });
+
+    it('an empty array revokes every link for the user (edge case — revocation)', async () => {
+      await replaceInstallationLinks(env.DB, 7002, [300, 301]);
+      await replaceInstallationLinks(env.DB, 7002, []);
+      await expect(linksFor(7002)).resolves.toEqual([]);
+    });
+
+    it('never touches a different user’s links (permission boundary — reconcile isolation)', async () => {
+      await replaceInstallationLinks(env.DB, 7003, [400]);
+      await replaceInstallationLinks(env.DB, 7004, [401]);
+      await replaceInstallationLinks(env.DB, 7003, []);
+
+      await expect(linksFor(7003)).resolves.toEqual([]);
+      await expect(linksFor(7004)).resolves.toEqual([401]);
     });
   });
 });
