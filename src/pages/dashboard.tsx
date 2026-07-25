@@ -355,6 +355,7 @@ const DASHBOARD_SCRIPT = `(function () {
    * surfaces no error text either way — a rate-limited or unknown repo just
    * stops spinning, so nothing here is an oracle.
    */
+  var MIN_SPIN_MS = 1100;
   syncBtns.forEach(function (btn) {
     var icon = btn.querySelector('svg');
     btn.addEventListener('click', function () {
@@ -363,9 +364,38 @@ const DASHBOARD_SCRIPT = `(function () {
       if (!repo) return;
       btn.disabled = true;
       if (icon) icon.setAttribute('data-gc-spin', '');
+      var startedAt = Date.now();
       function stop() {
-        btn.disabled = false;
-        if (icon) icon.removeAttribute('data-gc-spin');
+        // Keep the icon spinning for a visible minimum even when the 202
+        // returns instantly — the collect runs in the background via
+        // waitUntil, so the fetch settling is not when the sync "finished".
+        setTimeout(
+          function () {
+            btn.disabled = false;
+            if (icon) icon.removeAttribute('data-gc-spin');
+          },
+          Math.max(0, MIN_SPIN_MS - (Date.now() - startedAt)),
+        );
+      }
+      function markSynced() {
+        // Optimistic: the kick was accepted (202), so reflect it — otherwise
+        // the row's timestamp never moves and the sync reads as inert.
+        repo.collectedAt = new Date().toISOString();
+        var row = btn.closest('[data-repo-row]');
+        if (row) {
+          var label = row.querySelector('[data-repo-state]');
+          if (label) {
+            label.setAttribute('data-live-text', 'just now');
+            label.setAttribute('data-live-class', 'text-faint');
+            label.removeAttribute('data-live-pulse');
+            label.removeAttribute('data-gc-pulse');
+          }
+          renderRowState(row, repo);
+        }
+        if (repo === current.repo) {
+          current.buster = Date.now();
+          render();
+        }
       }
       fetch('/repos/' + repo.id + '/refresh', { method: 'POST' })
         .then(function (res) {
@@ -373,10 +403,7 @@ const DASHBOARD_SCRIPT = `(function () {
             location.href = '/auth/login';
             return;
           }
-          if (res.status === 202 && repo === current.repo) {
-            current.buster = Date.now();
-            render();
-          }
+          if (res.status === 202) markSynced();
           stop();
         })
         .catch(stop);

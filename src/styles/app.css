@@ -324,10 +324,6 @@ a:hover [data-gear] {
   transform: rotate(180deg);
 }
 
-button:hover [data-sync] {
-  transform: rotate(50deg);
-}
-
 @media (prefers-reduced-motion: reduce) {
   [data-gc-pulse],
   [data-gc-spin] {
