@@ -8,8 +8,19 @@ describe('sealSvg', () => {
     expect(svg).toContain('stroke-width="2"');
     // The check path carries the page-side hover-draw hook (app.css gcdraw).
     // Emitted here so the seal stays the single canonical draw site.
-    expect(svg).toContain('<path data-seal-check d="m9 12 2 2 4-4"');
+    expect(svg).toContain('<path data-seal-check="" d="m9 12 2 2 4-4"');
     expect(svg).toContain('viewBox="0 0 24 24"');
+  });
+
+  it('renders data-seal-check as a VALUED attribute so badge SVGs stay well-formed XML', () => {
+    // The seal is embedded in badge SVGs served as image/svg+xml and parsed
+    // as strict XML, where a valueless attribute (`<path data-seal-check ...>`)
+    // is a well-formedness error that makes the whole badge unrenderable in an
+    // <img>. It MUST carry `=""` (regression guard for the v0.6.2 broken-badge
+    // bug). The empty value still matches the `[data-seal-check]` hover selector.
+    const svg = sealSvg({ size: 13, kind: 'check', color: '#ffffff' });
+    expect(svg).toContain('data-seal-check=""');
+    expect(svg).not.toMatch(/data-seal-check(?!="")/);
   });
 
   it('puts data-seal-check on the check path only — never on the circle or the stale seal', () => {

@@ -43,7 +43,7 @@ describe('Layout nav wordmark', () => {
     const html = render();
     // The attribute reaches the header purely because sealSvg() emits it —
     // layout.tsx passes no flag, so the seal stays the single draw site.
-    expect(html).toContain('<path data-seal-check d="m9 12 2 2 4-4"');
+    expect(html).toContain('<path data-seal-check="" d="m9 12 2 2 4-4"');
     expect(sealSvg({ size: 19, kind: 'check', color: 'var(--accent)' })).toContain(
       'data-seal-check',
     );

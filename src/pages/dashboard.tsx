@@ -982,12 +982,11 @@ function UrlCopyButton(props: { id: string; label: string; enabled: boolean }) {
 }
 
 /**
- * Copy-trigger button. Wording per breakpoint is static markup (comp:
- * `markdown` / `✓` on mobile, `copy markdown` / `copied ✓` from `sm:`) —
- * the script only toggles the button's `data-copied` attribute; CSS
- * (`group-data-copied:` variants) swaps the idle/copied spans. This is the
- * sanctioned DASHBOARD_SCRIPT deviation from the spec: no viewport logic
- * ever enters JS.
+ * Copy-trigger button. The label text is STATIC (`copy markdown`, or just
+ * `markdown` below `sm:`) — only the leading glyph animates through the
+ * copy → loading → done phases (`data-copy-phase`; app.css swaps the visible
+ * face). Nothing about the text changes, so the button width is constant and
+ * the glyph never shifts sideways during the animation.
  */
 function CopyButton(props: { kind: 'md' | 'html' | 'react'; label: string; enabled: boolean }) {
   const { kind, label, enabled } = props;
@@ -998,12 +997,9 @@ function CopyButton(props: { kind: 'md' | 'html' | 'react'; label: string; enabl
       class={`${COPY_BTN_CLASS} ${enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-45'}`}
     >
       <CopyGlyphs />
-      <span data-copy-idle class="group-data-copied:hidden">
+      <span>
         <span class="hidden sm:inline">copy </span>
         {label}
-      </span>
-      <span data-copy-copied class="hidden group-data-copied:inline">
-        <span class="hidden sm:inline">copied </span>✓
       </span>
     </button>
   );

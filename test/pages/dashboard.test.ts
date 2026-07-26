@@ -347,15 +347,18 @@ describe('DashboardPage — badge builder', () => {
     expect(html).not.toContain('cursor-not-allowed opacity-45');
   });
 
-  it('renders three copy buttons with static per-breakpoint label spans', () => {
+  it('renders three copy buttons with a single static label each', () => {
     const html = render(DashboardPage(fixtureProps()));
     expect(html).toContain('data-copy="md"');
     expect(html).toContain('data-copy="html"');
     expect(html).toContain('data-copy="react"');
-    expect(count(html, 'data-copy-idle')).toBe(3);
-    expect(count(html, 'data-copy-copied')).toBe(3);
+    // Label is static: the "copy " prefix from sm: up, the metric label always.
     expect(html).toContain('<span class="hidden sm:inline">copy </span>markdown');
-    expect(count(html, '<span class="hidden sm:inline">copied </span>✓')).toBe(3);
+    // The old copied-text swap is gone — only the leading glyph animates, so
+    // the button width never changes and the glyph never shifts sideways.
+    expect(html).not.toContain('data-copy-idle');
+    expect(html).not.toContain('data-copy-copied');
+    expect(html).not.toContain('copied </span>✓');
   });
 
   it('falls back to a muted builder message when no account has a repo', () => {

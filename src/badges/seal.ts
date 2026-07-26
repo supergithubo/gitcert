@@ -31,9 +31,15 @@ export function sealSvg(options: SealOptions): string {
   const circle = `<circle cx="12" cy="12" r="10" ${stroke} stroke-width="${kind === 'stale' ? '1.5' : '2'}"/>`;
   // `data-seal-check` is the page-side hover-draw hook (app.css `gcdraw`).
   // Emitted here because this is the ONE place the seal is drawn — never at
-  // call sites. Inert inside a badge SVG: those documents carry their own
-  // inline <style> with no `gcdraw` keyframe, so the attribute is a no-op there.
+  // call sites. It MUST carry an explicit `=""` value: the seal is also
+  // embedded in badge SVGs served as `image/svg+xml` and parsed as strict
+  // XML, where a valueless attribute is a well-formedness error that makes
+  // the whole badge unrenderable. Inert inside a badge (no `gcdraw` keyframe
+  // in the badge's own <style>); the empty value keeps the hover selector
+  // `[data-seal-check]` matching on HTML pages.
   const check =
-    kind === 'check' ? `<path data-seal-check d="m9 12 2 2 4-4" ${stroke} stroke-width="2"/>` : '';
+    kind === 'check'
+      ? `<path data-seal-check="" d="m9 12 2 2 4-4" ${stroke} stroke-width="2"/>`
+      : '';
   return `<svg${position} width="${size}" height="${size}" viewBox="0 0 24 24" style="${style}">${circle}${check}</svg>`;
 }
