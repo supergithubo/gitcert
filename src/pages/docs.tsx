@@ -283,8 +283,9 @@ function SectionInstall() {
           <div class="mb-1 text-[15px] sm:text-[16px]">Connect the GitHub App</div>
           <div class="text-[14px] leading-[1.6] text-soft sm:text-[14.5px]">
             Authorize <strong class="font-semibold">GitCert</strong> from the GitHub Marketplace or
-            the install button on the landing page. Installation takes about fifteen seconds and
-            asks only for read access.
+            the install button on the landing page — on your personal account, an organization you
+            administer, or both. Installation takes about fifteen seconds and asks only for read
+            access.
           </div>
         </InstallStep>
         <InstallStep num="2.">
@@ -711,6 +712,13 @@ function SectionManaging() {
       <div class={EYEBROW_CLASS}>07 · Managing</div>
       <h2 class={`mb-5 ${H2_CLASS}`}>Managing repos</h2>
       <div class="flex flex-col gap-[18px]">
+        <ManageRow title="personal & org accounts">
+          The dashboard groups your repos by the account they&apos;re installed on — your personal
+          account first (unlabeled), then any organizations, each marked with an{' '}
+          <span class={MONO_INLINE}>org</span> chip. For an organization, every teammate GitHub
+          grants access to the installation can enable, hide, and refresh its repos, so a whole team
+          shares one set of badges rather than one person owning them.
+        </ManageRow>
         <ManageRow title="enable / hide">
           Each repo has an <span class="text-body">enable</span> toggle on the dashboard. Enabled,
           its badges resolve. Switched off, GitCert stops publishing it and its badges return{' '}
@@ -828,6 +836,12 @@ function SectionDisconnect() {
           </a>
         </div>
       </div>
+      <p class="mt-5 text-[14px] leading-[1.6] text-soft">
+        For an <strong class="font-semibold text-body">organization</strong> install both actions
+        are team-wide: signing out ends only your own session, but uninstalling removes GitCert for
+        the whole org — every teammate&apos;s badges for those repos flip to{' '}
+        <span class={MONO_INLINE}>not found</span>.
+      </p>
     </Section>
   );
 }
