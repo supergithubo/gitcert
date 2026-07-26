@@ -170,7 +170,12 @@ function Sidebar() {
       <div class="pl-[14px] font-mono text-[11px] leading-[1.6] text-muted">
         Docs for GitCert v{version}
         <br />
-        <a href={GITHUB_REPO_URL} target="_blank" rel="noopener" class="text-muted">
+        <a
+          href={`${GITHUB_REPO_URL}/blob/main/CHANGELOG.md`}
+          target="_blank"
+          rel="noopener"
+          class="text-muted"
+        >
           changelog ↗
         </a>
       </div>
