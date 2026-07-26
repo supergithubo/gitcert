@@ -86,13 +86,13 @@ describe('metricLabel', () => {
 
 describe('metricMeta', () => {
   it('marks only issues and open PRs as status metrics', () => {
-    expect(metricMeta('issues')).toEqual({ icon: 'dot', status: true });
-    expect(metricMeta('open-prs')).toEqual({ icon: 'dot', status: true });
+    expect(metricMeta('issues')).toEqual({ icon: 'wrench', status: true });
+    expect(metricMeta('open-prs')).toEqual({ icon: 'gitmerge', status: true });
     expect(metricMeta('commits')).toEqual({ icon: 'branch', status: false });
     expect(metricMeta('last-commit')).toEqual({ icon: 'clock', status: false });
     expect(metricMeta('language')).toEqual({ icon: 'lang', status: false });
     expect(metricMeta('created')).toEqual({ icon: 'calendar', status: false });
     expect(metricMeta('first-commit')).toEqual({ icon: 'branch', status: false });
-    expect(metricMeta('size')).toEqual({ icon: 'square', status: false });
+    expect(metricMeta('size')).toEqual({ icon: 'box', status: false });
   });
 });

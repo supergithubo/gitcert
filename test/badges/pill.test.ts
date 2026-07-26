@@ -55,14 +55,16 @@ describe('pillBadge', () => {
     }
   });
 
-  it('colors the status dot green at zero and amber above zero', () => {
-    // open-prs fixture value is 0 → green; issues fixture value is 3 → amber.
-    expect(pillBadge(badgeProps('open-prs', 'normal', 'pill', 'light'))).toContain(
-      `<circle cx="12" cy="12" r="5.6" fill="${ACCENT_GREEN}"/>`,
+  it('colors the status glyph green at zero and amber above zero', () => {
+    // open-prs fixture value is 0 → green git-merge; issues value is 3 → amber wrench.
+    const prs = pillBadge(badgeProps('open-prs', 'normal', 'pill', 'light'));
+    expect(prs).toContain('d="M6 21V9a9 9 0 0 0 9 9"');
+    expect(prs).toContain(`stroke="${ACCENT_GREEN}"`);
+    const issues = pillBadge(badgeProps('issues', 'normal', 'pill', 'light'));
+    expect(issues).toContain(
+      'd="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"',
     );
-    expect(pillBadge(badgeProps('issues', 'normal', 'pill', 'light'))).toContain(
-      `<circle cx="12" cy="12" r="5.6" fill="${AMBER}"/>`,
-    );
+    expect(issues).toContain(`stroke="${AMBER}"`);
   });
 
   it('renders the language chip with the linguist color', () => {

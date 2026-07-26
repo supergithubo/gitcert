@@ -9,12 +9,13 @@ import { formatCount, formatMonthYear, formatRelative, formatSizeKb } from './fo
 import type { Metric } from './types';
 
 /** Pill icon glyph names (ported from the specimen `meta` table). */
-export type MetricIcon = 'branch' | 'clock' | 'dot' | 'lang' | 'calendar' | 'square';
+export type MetricIcon =
+  'branch' | 'clock' | 'dot' | 'lang' | 'wrench' | 'gitmerge' | 'calendar' | 'box';
 
 interface MetricMeta {
   label: string;
   icon: MetricIcon;
-  /** Status metrics color the pill dot green (0) / amber (>0). */
+  /** Status metrics color the pill icon green (0) / amber (>0). */
   status: boolean;
 }
 
@@ -22,12 +23,12 @@ interface MetricMeta {
 const META: Record<Metric, MetricMeta> = {
   commits: { label: 'commits', icon: 'branch', status: false },
   'last-commit': { label: 'last commit', icon: 'clock', status: false },
-  issues: { label: 'open issues', icon: 'dot', status: true },
-  'open-prs': { label: 'open PRs', icon: 'dot', status: true },
+  issues: { label: 'open issues', icon: 'wrench', status: true },
+  'open-prs': { label: 'open PRs', icon: 'gitmerge', status: true },
   language: { label: 'language', icon: 'lang', status: false },
   created: { label: 'created', icon: 'calendar', status: false },
   'first-commit': { label: 'first commit', icon: 'branch', status: false },
-  size: { label: 'size', icon: 'square', status: false },
+  size: { label: 'size', icon: 'box', status: false },
 };
 
 /** Default rendered label for a metric (`issues` → `open issues`). */

@@ -69,8 +69,8 @@ export function pillBadge(props: BadgeProps): string {
   };
   const { color, themeCss } = resolveColors(roles, theme);
 
-  // Icon selection: status metrics render a green/amber dot; collecting and
-  // not-found always render a muted dot (specimen ternaries verbatim).
+  // Icon selection: status metrics color their glyph green/amber; collecting
+  // and not-found always render a muted dot (specimen ternaries verbatim).
   let iconName: MetricIcon = meta.icon;
   let iconColor = color['muted']!;
   if (meta.status && (kind === 'normal' || kind === 'stale')) {
@@ -142,16 +142,42 @@ function icon(
       return `${open}<circle cx="12" cy="12" r="5.6" fill="${color}"/></svg>`;
     case 'lang':
       return `${open}<rect x="5" y="5" width="14" height="14" rx="3" fill="${chip ?? color}"/></svg>`;
+    case 'wrench':
+      return (
+        open +
+        `<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" ${dr}/>` +
+        '</svg>'
+      );
+    case 'gitmerge':
+      return (
+        open +
+        `<circle cx="18" cy="18" r="3" ${dr}/>` +
+        `<circle cx="6" cy="6" r="3" ${dr}/>` +
+        `<path d="M6 21V9a9 9 0 0 0 9 9" ${dr}/>` +
+        '</svg>'
+      );
     case 'calendar':
       return (
         open +
+        `<path d="M8 2v4" ${dr}/>` +
+        `<path d="M16 2v4" ${dr}/>` +
         `<rect x="3" y="4" width="18" height="18" rx="2" ${dr}/>` +
-        `<line x1="16" y1="2" x2="16" y2="6" ${dr}/>` +
-        `<line x1="8" y1="2" x2="8" y2="6" ${dr}/>` +
-        `<line x1="3" y1="10" x2="21" y2="10" ${dr}/>` +
+        `<path d="M3 10h18" ${dr}/>` +
+        `<circle cx="8" cy="14" r="1" fill="${color}"/>` +
+        `<circle cx="12" cy="14" r="1" fill="${color}"/>` +
+        `<circle cx="16" cy="14" r="1" fill="${color}"/>` +
+        `<circle cx="8" cy="18" r="1" fill="${color}"/>` +
+        `<circle cx="12" cy="18" r="1" fill="${color}"/>` +
+        `<circle cx="16" cy="18" r="1" fill="${color}"/>` +
         '</svg>'
       );
-    case 'square':
-      return `${open}<rect x="6" y="6" width="12" height="12" rx="1.5" fill="${color}"/></svg>`;
+    case 'box':
+      return (
+        open +
+        `<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" ${dr}/>` +
+        `<path d="m3.3 7 8.7 5 8.7-5" ${dr}/>` +
+        `<path d="M12 22V12" ${dr}/>` +
+        '</svg>'
+      );
   }
 }
