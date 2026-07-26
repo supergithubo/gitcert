@@ -23,15 +23,16 @@ function scrollspyScript(html: string): string {
 }
 
 describe('DocsPage structure', () => {
-  it('renders all nine sections s1–s9 with their headings', () => {
+  it('renders all ten sections s1–s10 with their headings', () => {
     const html = render();
-    for (let i = 1; i <= 9; i++) expect(html).toContain(`id="s${i}"`);
+    for (let i = 1; i <= 10; i++) expect(html).toContain(`id="s${i}"`);
     for (const heading of [
       'What GitCert is',
       'Install',
       'The badges',
       'Using a badge',
       'The verify certificate',
+      'The JSON API',
       'Managing repos',
       'Disconnecting or switching',
       'Trust model',
@@ -41,9 +42,27 @@ describe('DocsPage structure', () => {
     }
   });
 
+  it('renumbers the eyebrows in lockstep with the ids (s6 inserted, rest shift)', () => {
+    const html = render();
+    for (const eyebrow of [
+      '06 · Reference', // The JSON API — the new section
+      '07 · Managing',
+      '08 · Important',
+      '09 · Trust',
+      '10 · Advanced',
+    ]) {
+      expect(html).toContain(eyebrow);
+    }
+    // The pre-shift numbering must be gone from those four sections.
+    expect(html).not.toContain('06 · Managing');
+    expect(html).not.toContain('07 · Important');
+    expect(html).not.toContain('08 · Trust');
+    expect(html).not.toContain('09 · Advanced');
+  });
+
   it('offers a section nav to every anchor (sidebar desktop + jump-list mobile)', () => {
     const html = render();
-    for (let i = 1; i <= 9; i++) {
+    for (let i = 1; i <= 10; i++) {
       // Each id is linked at least twice: the sticky sidebar and the mobile
       // jump-list both reference #s{i}.
       expect(count(html, `href="#s${i}"`)).toBeGreaterThanOrEqual(2);
@@ -68,7 +87,7 @@ describe('DocsPage scrollspy active-nav (issue #1)', () => {
     // The only dynamic tokens are the static section ids s1..s9 — assert the
     // literal id array is present and no template interpolation survived.
     const script = scrollspyScript(render({ handle: 'octocat' }));
-    expect(script).toContain("['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9']");
+    expect(script).toContain("['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 's10']");
     expect(script).not.toContain('${');
     expect(script).not.toContain('octocat');
     // Identical regardless of the account prop — nothing user-derived leaks in.
@@ -77,10 +96,10 @@ describe('DocsPage scrollspy active-nav (issue #1)', () => {
 
   it('hooks every desktop sidebar link with data-spy-link and pre-marks s1 active', () => {
     const html = render();
-    // Nine sidebar links carry the scoping hook (the mobile jump-list does not).
+    // Ten sidebar links carry the scoping hook (the mobile jump-list does not).
     // Match the rendered attribute so the script's own `[data-spy-link]`
     // selector string is not miscounted as a link.
-    expect(count(html, 'data-spy-link="true"')).toBe(9);
+    expect(count(html, 'data-spy-link="true"')).toBe(10);
     // Server-rendered initial active state so the first paint (and the
     // JS-disabled state) shows "01 Overview" highlighted — exactly one link.
     expect(count(html, 'data-active=""')).toBe(1);
@@ -90,7 +109,7 @@ describe('DocsPage scrollspy active-nav (issue #1)', () => {
     const html = render();
     // Every spy link is an <a href="#sN"> so navigation works with JS disabled;
     // only the scroll-driven highlight needs the observer.
-    for (let i = 1; i <= 9; i++) {
+    for (let i = 1; i <= 10; i++) {
       expect(html).toContain(`href="#s${i}"`);
     }
     // No smooth-scroll / preventDefault machinery was ported (native anchors).
@@ -152,6 +171,9 @@ describe('DocsPage stale-build guard (compiled styles.css)', () => {
       '.overflow-x-auto',
       '.sm\\:pr-\\[22px\\]',
       '.sm\\:pl-\\[18px\\]',
+      // s6 envelope-field card: stacked at base, two-column grid at sm.
+      '.sm\\:contents',
+      '.sm\\:grid-cols-\\[auto_1fr\\]',
     ]) {
       expect(css, `missing compiled utility ${sel} — run npm run build:css`).toContain(sel);
     }
@@ -201,19 +223,160 @@ describe('DocsPage account menu (session-aware nav)', () => {
   });
 });
 
-describe('DocsPage disconnect-vs-switch (s7)', () => {
+describe('DocsPage disconnect-vs-switch (now s8)', () => {
   it('distinguishes switching accounts (sign out) from revoking access (uninstall)', () => {
     const html = render();
-    const s7 = html.slice(html.indexOf('id="s7"'), html.indexOf('id="s8"'));
-    expect(s7).toContain('Switch account');
-    expect(s7).toContain('session only');
-    expect(s7).toContain('Sign out');
-    expect(s7).toContain('Revoke access');
-    expect(s7).toContain('uninstall the app');
+    const s8 = html.slice(html.indexOf('id="s8"'), html.indexOf('id="s9"'));
+    expect(s8).toContain('Switch account');
+    expect(s8).toContain('session only');
+    expect(s8).toContain('Sign out');
+    expect(s8).toContain('Revoke access');
+    expect(s8).toContain('uninstall the app');
     // The precise uninstall path and the external revoke link.
-    expect(s7).toContain('Installed GitHub Apps');
-    expect(s7).toContain('href="https://github.com/settings/installations"');
-    expect(s7).toContain('not found');
+    expect(s8).toContain('Installed GitHub Apps');
+    expect(s8).toContain('href="https://github.com/settings/installations"');
+    expect(s8).toContain('not found');
+  });
+});
+
+/**
+ * s6 truthfulness. The design mock's JSON envelope and verify recipe were
+ * PLACEHOLDERS and were factually wrong; these assertions are the guard that
+ * stops the docs drifting back into fiction. Every field name below is
+ * verifiable against src/lib/payload.ts, src/routes/api.ts and src/lib/sign.ts.
+ */
+describe('DocsPage — The JSON API (s6)', () => {
+  /** Hono escapes quotes in text children; decode so assertions stay readable. */
+  function decode(html: string): string {
+    return html
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, '<');
+  }
+
+  function s6(): string {
+    const html = render();
+    return decode(html.slice(html.indexOf('id="s6"'), html.indexOf('id="s7"')));
+  }
+
+  it('renders all eight beats in order', () => {
+    const s = s6();
+    const beats = [
+      'A badge is one rendering of a signed record',
+      'Endpoint',
+      'curl -s https://gitcert.harborstack.app/api/johndoe/client-platform.json',
+      'excluded, uninstalled, and never-created are answered identically',
+      'Response',
+      'public_key_url',
+      'pretty-printed for reading',
+      'Verify it yourself',
+      'Verify the bytes, not your reading of them',
+    ];
+    let cursor = -1;
+    for (const beat of beats) {
+      const at = s.indexOf(beat, cursor + 1);
+      expect(at, `beat out of order or missing: ${beat}`).toBeGreaterThan(cursor);
+      cursor = at;
+    }
+  });
+
+  it('ships the REAL canonical payload field names (src/lib/payload.ts)', () => {
+    const s = s6();
+    for (const field of [
+      '"cert_serial"',
+      '"collected_at"',
+      '"issuer"',
+      '"method"',
+      '"private"',
+      '"repo"',
+      '"stats"',
+      '"v"',
+      '"signature"',
+      '"public_key_url"',
+    ]) {
+      expect(s, `missing envelope field ${field}`).toContain(field);
+    }
+    // Deep-sorted stats keys, exactly as buildCanonicalPayload emits them.
+    for (const field of [
+      '"commits"',
+      '"created_at"',
+      '"first_commit_at"',
+      '"language_pct"',
+      '"languages"',
+      '"last_commit_at"',
+      '"open_issues"',
+      '"open_prs"',
+      '"primary_language"',
+      '"size_kb"',
+    ]) {
+      expect(s, `missing stats field ${field}`).toContain(field);
+    }
+  });
+
+  it('carries none of the mock’s invented fields or the fake algorithm prefix', () => {
+    const s = s6();
+    // The mock's placeholder shape — none of it exists in the real payload.
+    for (const fiction of [
+      'cert_id',
+      '"metrics"',
+      '"attested_at"',
+      '"owner"',
+      '"last_commit"',
+      '"size_bytes"',
+      '"first_commit"',
+    ]) {
+      expect(s, `mock fiction resurfaced: ${fiction}`).not.toContain(fiction);
+    }
+    // src/lib/sign.ts returns BARE base64 — there is no prefix to strip.
+    expect(s).not.toContain('ed25519:');
+    expect(s).not.toContain("split(':'");
+  });
+
+  it('never claims key rotation — there is one key, derived per request', () => {
+    const s = s6().toLowerCase();
+    for (const phrase of ['rotation', 'rotate', 'retired key', 'old certificates keep verifying']) {
+      expect(s, `unsupported key-rotation claim: ${phrase}`).not.toContain(phrase);
+    }
+    // What /pubkey actually answers with.
+    expect(s6()).toContain('algorithm');
+    expect(s6()).toContain('jwk');
+    expect(s6()).toContain('raw 32-byte Ed25519 key');
+  });
+
+  it('recipe slices the served bytes and never re-serializes them', () => {
+    const s = s6();
+    expect(s).toContain(`raw.index(b'"payload":')`);
+    // Mirrors verify.tsx's lastIndexOf(',"signature"').
+    expect(s).toContain(`raw.rindex(b',"signature"')`);
+    expect(s).toContain('payload = raw[start:end]');
+    expect(s).toContain('re-serializing them');
+    // A JSON round-trip on the signed bytes is the one thing that must never
+    // appear here — it reorders/reformats and fails a valid certificate.
+    expect(s).not.toContain('json.dumps');
+  });
+
+  it('recipe reads the key out of /pubkey’s JSON and the serial from cert_serial', () => {
+    const s = s6();
+    expect(s).toContain("['public_key']");
+    expect(s).toContain("json.load(open('gitcert.pub.json'))");
+    expect(s).toContain("json.loads(payload)['cert_serial']");
+    // The mock read a raw base64 file; /pubkey serves JSON.
+    expect(s).not.toContain("open('gitcert.pub').read()");
+  });
+
+  it('stacks the field card at base and grids it at sm (mobile mock)', () => {
+    const s = s6();
+    expect(s).toContain('flex flex-col gap-3');
+    expect(s).toContain('sm:grid');
+    expect(s).toContain('sm:grid-cols-[auto_1fr]');
+    // Each pair flattens into the parent grid at sm, stays stacked at base.
+    expect(count(s, 'sm:contents')).toBe(3);
+  });
+
+  it('states the no-existence-oracle guarantee without becoming one', () => {
+    const s = s6();
+    expect(s).toContain('excluded, uninstalled, and never-created are answered identically');
+    expect(s).toContain('tells the caller nothing about what does or does not exist on GitHub');
   });
 });
 

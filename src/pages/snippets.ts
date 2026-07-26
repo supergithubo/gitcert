@@ -20,9 +20,19 @@ export const BADGE_PATH_TEMPLATE = '/b/{OWNER}/{REPO}/{METRIC}.svg?style={STYLE}
 /** Relative verify path template. */
 export const VERIFY_PATH_TEMPLATE = '/verify/{OWNER}/{REPO}';
 
+/**
+ * Relative JSON-API path template. Repo-scoped like the verify path — it does
+ * NOT vary with the builder's metric/style/theme controls, which is why the
+ * dashboard renders it as a sibling of the `verify:` row rather than a fourth
+ * copy tab.
+ */
+export const API_PATH_TEMPLATE = '/api/{OWNER}/{REPO}.json';
+
 const BADGE_URL = `${SNIPPET_BASE_URL}${BADGE_PATH_TEMPLATE}`;
 /** Absolute verify URL with {OWNER}/{REPO} placeholders — also the dashboard's Verification link/copy target. */
 export const VERIFY_URL = `${SNIPPET_BASE_URL}${VERIFY_PATH_TEMPLATE}`;
+/** Absolute JSON-API URL with {OWNER}/{REPO} placeholders — the `api:` row's href and copy target. */
+export const API_URL = `${SNIPPET_BASE_URL}${API_PATH_TEMPLATE}`;
 
 /** Alt text carries the human label, never live numbers (spec Decision 12). */
 const ALT_TEXT = '{LABEL} — attested by GitCert';

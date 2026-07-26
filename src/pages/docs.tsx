@@ -1,10 +1,10 @@
 /**
  * Public documentation page (third-export spec §Step 2), ported from
- * artifacts/design/docs.dc.html + docs-mobile.dc.html. Nine sections
- * (s1–s9): what GitCert is, install, the badges, using a badge, the verify
- * certificate, managing repos, disconnecting-or-switching, trust model,
- * self-hosting. A sticky section-nav sidebar on desktop collapses to a
- * <details> jump-list on mobile.
+ * artifacts/design/docs.dc.html + docs-mobile.dc.html. Ten sections
+ * (s1–s10): what GitCert is, install, the badges, using a badge, the verify
+ * certificate, the JSON API, managing repos, disconnecting-or-switching,
+ * trust model, self-hosting. A sticky section-nav sidebar on desktop
+ * collapses to a <details> jump-list on mobile.
  *
  * Pure component: the route handler passes typed props; nothing here reads
  * D1, env, the clock, or GitHub. Zero client JS — the sidebar/jump-list are
@@ -43,10 +43,11 @@ const NAV_ITEMS: readonly NavItem[] = [
   { id: 's3', num: '03', label: 'The badges' },
   { id: 's4', num: '04', label: 'Using a badge' },
   { id: 's5', num: '05', label: 'The certificate' },
-  { id: 's6', num: '06', label: 'Managing repos' },
-  { id: 's7', num: '07', label: 'Disconnect / switch' },
-  { id: 's8', num: '08', label: 'Trust model' },
-  { id: 's9', num: '09', label: 'Self-hosting' },
+  { id: 's6', num: '06', label: 'The JSON API' },
+  { id: 's7', num: '07', label: 'Managing repos' },
+  { id: 's8', num: '08', label: 'Disconnect / switch' },
+  { id: 's9', num: '09', label: 'Trust model' },
+  { id: 's10', num: '10', label: 'Self-hosting' },
 ];
 
 const EYEBROW_CLASS = 'font-mono text-[12px] tracking-[1px] text-accent mb-[10px]';
@@ -59,11 +60,11 @@ const SECTION_RULE = <div class="my-9 h-px bg-hair2 sm:my-12" />;
  * Scroll-driven active-nav highlight (ported from docs.dc.html lines 346–354,
  * 371–373). Like VERIFY_SCRIPT / THEME_INIT_SCRIPT this is a CONSTANT string
  * with ZERO interpolated user data — the only dynamic tokens are the static
- * section ids `s1`..`s9`, literals baked into the source. No owner/repo/handle
+ * section ids `s1`..`s10`, literals baked into the source. No owner/repo/handle
  * ever enters this script (there is nothing user-controlled on /docs at all).
  *
  * One IntersectionObserver (rootMargin '-25% 0px -65% 0px', threshold 0)
- * watches the nine <section id="sN"> and toggles `data-active` on the desktop
+ * watches the ten <section id="sN"> and toggles `data-active` on the desktop
  * sidebar link whose href is `#sN`; the unlayered app.css rule
  * `[data-spy-link][data-active]` paints the accent border + ink text.
  *
@@ -74,7 +75,7 @@ const SECTION_RULE = <div class="my-9 h-px bg-hair2 sm:my-12" />;
  */
 const SCROLLSPY_SCRIPT = `(function () {
   if (!('IntersectionObserver' in window)) return;
-  var ids = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9'];
+  var ids = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 's10'];
   var links = {};
   ids.forEach(function (id) {
     var a = document.querySelector('[data-spy-link][href="#' + id + '"]');
@@ -126,6 +127,8 @@ export function DocsPage(props: DocsPageProps) {
             <SectionUsingABadge />
             {SECTION_RULE}
             <SectionCertificate />
+            {SECTION_RULE}
+            <SectionJsonApi />
             {SECTION_RULE}
             <SectionManaging />
             {SECTION_RULE}
@@ -527,10 +530,185 @@ function SectionCertificate() {
   );
 }
 
-function SectionManaging() {
+/**
+ * The s6 example envelope. NOT the design mock's block, which was a
+ * placeholder and factually wrong (it showed `owner`/`repo`/`metrics`/
+ * `attested_at`/`cert_id` and an `ed25519:`-prefixed signature). This mirrors
+ * what the code actually serves:
+ *
+ * - key order is the REAL serialized order — `src/lib/payload.ts` sorts keys
+ *   alphabetically at every level before signing;
+ * - `collected_at` carries milliseconds because it comes from `toISOString()`;
+ * - `language_pct` is 81.3, not 81.0 — `JSON.stringify(81.0)` emits `81`;
+ * - the signature is BARE standard base64 (`src/lib/sign.ts` returns `btoa` of
+ *   the raw signature bytes) — there is no algorithm prefix to strip;
+ * - envelope key order is fixed by the string concatenation in
+ *   `src/routes/api.ts`: payload, signature, public_key_url.
+ *
+ * The signature string is illustrative and elided with `…` — it is not a real
+ * signature over this payload and cannot be made to verify.
+ */
+const API_RESPONSE_EXAMPLE = `{
+  "payload": {
+    "cert_serial": "GC-7F2A41",
+    "collected_at": "2026-07-22T14:03:00.417Z",
+    "issuer": "gitcert.harborstack.app",
+    "method": "github-app/read-only",
+    "private": true,
+    "repo": "johndoe/client-platform",
+    "stats": {
+      "commits": 1247,
+      "created_at": "2023-02-14T08:30:12Z",
+      "first_commit_at": "2023-02-14T09:02:57Z",
+      "language_pct": 81.3,
+      "languages": [{ "name": "TypeScript", "pct": 81.3 }],
+      "last_commit_at": "2026-07-21T09:12:44Z",
+      "open_issues": 3,
+      "open_prs": 2,
+      "primary_language": "TypeScript",
+      "size_kb": 48213
+    },
+    "v": 1
+  },
+  "signature": "kR8v2Qc7…N0pQ==",
+  "public_key_url": "https://gitcert.harborstack.app/pubkey"
+}`;
+
+/**
+ * The s6 terminal recipe. Every line is verifiable against shipped code:
+ *
+ * - it slices the payload bytes out of the RAW envelope and never re-serializes
+ *   them, mirroring `verify.tsx` — a JSON round-trip reorders/reformats and
+ *   fails a genuine certificate (attestation invariant);
+ * - `rindex` mirrors `verify.tsx`'s `lastIndexOf(',"signature"')`;
+ * - `/pubkey` returns JSON (`{ algorithm, public_key, jwk }`), so the key is
+ *   read out of `['public_key']`, not from a raw base64 file;
+ * - the signature is decoded directly — no `split(':')`, there is no prefix;
+ * - the serial field is `cert_serial`.
+ */
+const API_VERIFY_RECIPE = `# pip install pynacl
+curl -s https://gitcert.harborstack.app/api/johndoe/client-platform.json -o cert.json
+curl -s https://gitcert.harborstack.app/pubkey -o gitcert.pub.json
+
+python3 - <<'PY'
+import json, base64
+from nacl.signing import VerifyKey
+
+raw = open('cert.json', 'rb').read()
+env = json.loads(raw)
+
+# the payload bytes exactly as served — re-serializing them
+# would change the bytes and fail a perfectly valid certificate
+start = raw.index(b'"payload":') + len(b'"payload":')
+end   = raw.rindex(b',"signature"')
+payload = raw[start:end]
+
+key = base64.b64decode(json.load(open('gitcert.pub.json'))['public_key'])
+sig = base64.b64decode(env['signature'])
+VerifyKey(key).verify(payload, sig)
+print('signature ok —', json.loads(payload)['cert_serial'])
+PY`;
+
+/**
+ * s6 — the same signed record the badges render, served raw. The endpoint and
+ * `/pubkey` already ship; this section only makes them visible.
+ */
+function SectionJsonApi() {
   return (
     <Section id="s6">
-      <div class={EYEBROW_CLASS}>06 · Managing</div>
+      <div class={EYEBROW_CLASS}>06 · Reference</div>
+      <h2 class={`mb-[14px] ${H2_CLASS}`}>The JSON API</h2>
+      <p class={`mb-6 ${BODY_CLASS}`}>
+        A badge is one rendering of a signed record. The same record is served raw, as JSON — one
+        endpoint per repository — for a CI check, a dashboard, or a portfolio site that would rather
+        set the number in its own type. No key, no token.
+      </p>
+
+      <CodeBlock label="Endpoint">
+        curl -s https://gitcert.harborstack.app/api/johndoe/client-platform.json
+      </CodeBlock>
+      {/* No existence oracle: every hidden cause answers identically. */}
+      <p class="mb-7 text-[14px] leading-[1.65] text-soft sm:text-[14.5px]">
+        The endpoint publishes exactly what the badges already publish, and nothing else.
+        Repositories you have not enabled are not served: excluded, uninstalled, and never-created
+        are answered identically, so a request that fails tells the caller nothing about what does
+        or does not exist on GitHub.
+      </p>
+
+      <CodeBlock label="Response">{API_RESPONSE_EXAMPLE}</CodeBlock>
+      <div class="mb-[14px] flex flex-col gap-3 rounded-[4px] border border-hair px-4 py-[15px] sm:grid sm:grid-cols-[auto_1fr] sm:gap-x-5 sm:gap-y-3 sm:px-5 sm:py-[18px]">
+        <ApiField name="payload">
+          The signed record: the repository and whether it is private, the stats GitCert read and
+          the UTC moment it read them, the issuer and method behind the reading, the payload
+          version, and the certificate serial printed on the verify page.
+        </ApiField>
+        <ApiField name="signature">
+          Ed25519 over the payload bytes exactly as served, standard base64. There is no algorithm
+          prefix — decode the string directly.
+        </ApiField>
+        <ApiField name="public_key_url">
+          Where to fetch the verifying key. <span class={MONO_INLINE}>/pubkey</span> answers with{' '}
+          <span class={MONO_INLINE}>algorithm</span>, <span class={MONO_INLINE}>public_key</span>{' '}
+          and <span class={MONO_INLINE}>jwk</span>; <span class={MONO_INLINE}>public_key</span> is
+          the raw 32-byte Ed25519 key in standard base64.
+        </ApiField>
+      </div>
+      <p class="mb-7 text-[14px] leading-[1.65] text-soft sm:text-[14.5px]">
+        The block above is pretty-printed for reading. The endpoint itself serves compact JSON with{' '}
+        <span class={MONO_INLINE}>payload</span> first, and the bytes between{' '}
+        <span class={MONO_INLINE}>&quot;payload&quot;:</span> and{' '}
+        <span class={MONO_INLINE}>,&quot;signature&quot;</span> are precisely what was signed.
+      </p>
+
+      <CodeBlock label="Verify it yourself">{API_VERIFY_RECIPE}</CodeBlock>
+      <div class="flex items-start gap-[10px] text-[13.5px] leading-[1.6] text-soft sm:text-[14px]">
+        <svg
+          width="17"
+          height="17"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--accent)"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="mt-[2px] flex-none"
+        >
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+        </svg>
+        <span>
+          Verify the bytes, not your reading of them. <span class={MONO_INLINE}>jq .payload</span>,
+          a JSON round-trip in any language, or simply re-indenting the file all produce different
+          bytes — and a genuine certificate will fail the check. Hand the served slice to the
+          verifier untouched.
+        </span>
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * One row of the s6 envelope-field card. `sm:contents` flattens the pair into
+ * the parent grid at desktop (name column + description column); at base the
+ * wrapper stays a block so the name sits above its description, matching
+ * docs-mobile. Kept module-private — neither SettingCard (title + prose, its
+ * own bordered box) nor ManageRow (fixed 150px column, no box) fits this shape.
+ */
+function ApiField(props: { name: string; children?: Child }) {
+  return (
+    <div class="sm:contents">
+      <div class="mb-[3px] font-mono text-[12px] text-ink sm:mb-0 sm:text-[12.5px] sm:whitespace-nowrap">
+        {props.name}
+      </div>
+      <div class="text-[13.5px] leading-[1.6] text-soft sm:text-[14px]">{props.children}</div>
+    </div>
+  );
+}
+
+function SectionManaging() {
+  return (
+    <Section id="s7">
+      <div class={EYEBROW_CLASS}>07 · Managing</div>
       <h2 class={`mb-5 ${H2_CLASS}`}>Managing repos</h2>
       <div class="flex flex-col gap-[18px]">
         <ManageRow title="enable / hide">
@@ -564,14 +742,14 @@ function ManageRow(props: { title: string; children?: Child }) {
 }
 
 /**
- * s7 — the prominent switch-vs-revoke distinction (spec Constraints): two
+ * s8 — the prominent switch-vs-revoke distinction (spec Constraints): two
  * cards side by side. Switch account = Sign out (session only); Revoke access
  * = uninstall on GitHub (removes read access). They must never be confused.
  */
 function SectionDisconnect() {
   return (
-    <Section id="s7">
-      <div class={EYEBROW_CLASS}>07 · Important</div>
+    <Section id="s8">
+      <div class={EYEBROW_CLASS}>08 · Important</div>
       <h2 class={`mb-2 ${H2_CLASS}`}>Disconnecting or switching</h2>
       <p class={`mb-6 ${BODY_CLASS}`}>
         Two different actions that are easy to confuse. One ends a browser session; the other
@@ -656,8 +834,8 @@ function SectionDisconnect() {
 
 function SectionTrust() {
   return (
-    <Section id="s8">
-      <div class={EYEBROW_CLASS}>08 · Trust</div>
+    <Section id="s9">
+      <div class={EYEBROW_CLASS}>09 · Trust</div>
       <h2 class={`mb-5 ${H2_CLASS}`}>Trust model</h2>
       <div class="flex flex-col gap-4">
         <TrustPoint title="Read-only, by construction">
@@ -704,8 +882,8 @@ function TrustPoint(props: { title: string; children?: Child }) {
 
 function SectionSelfHosting() {
   return (
-    <Section id="s9">
-      <div class={EYEBROW_CLASS}>09 · Advanced</div>
+    <Section id="s10">
+      <div class={EYEBROW_CLASS}>10 · Advanced</div>
       <h2 class={`mb-[14px] ${H2_CLASS}`}>Self-hosting</h2>
       <p class={`mb-5 ${BODY_CLASS}`}>
         Prefer to run the whole thing yourself? The collector, signer, and badge renderer are open

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  API_PATH_TEMPLATE,
+  API_URL,
   BADGE_PATH_TEMPLATE,
   SNIPPET_TEMPLATES,
   VERIFY_PATH_TEMPLATE,
+  VERIFY_URL,
   buildSnippets,
   fillSnippetTemplate,
   type SnippetParams,
@@ -86,5 +89,46 @@ describe('placeholder templates (dashboard state block source)', () => {
 
   it('leaves unknown brace tokens untouched (dumb substitution only)', () => {
     expect(fillSnippetTemplate('x {OWNER} {NOPE} y', params())).toBe('x wnston {NOPE} y');
+  });
+});
+
+describe('JSON-API templates (dashboard `api:` row source)', () => {
+  it('pins the relative and absolute API templates', () => {
+    expect(API_PATH_TEMPLATE).toBe('/api/{OWNER}/{REPO}.json');
+    expect(API_URL).toBe('https://gitcert.harborstack.app/api/{OWNER}/{REPO}.json');
+  });
+
+  it('fills through the same substitution the verify template uses', () => {
+    expect(fillSnippetTemplate(API_URL, params())).toBe(
+      'https://gitcert.harborstack.app/api/wnston/client-platform.json',
+    );
+    expect(fillSnippetTemplate(API_PATH_TEMPLATE, params())).toBe(
+      '/api/wnston/client-platform.json',
+    );
+  });
+
+  it('is repo-scoped only — no metric/style/theme placeholders', () => {
+    // The api: row is a sibling of verify:, not a fourth copy tab: the URL must
+    // not vary with the builder controls.
+    for (const token of ['{METRIC}', '{STYLE}', '{THEME}', '{LABEL}']) {
+      expect(API_URL).not.toContain(token);
+    }
+    // Filling with a different metric/style/theme yields the identical URL.
+    expect(
+      fillSnippetTemplate(API_URL, params({ metric: 'issues', style: 'pill', theme: 'dark' })),
+    ).toBe(fillSnippetTemplate(API_URL, params()));
+  });
+
+  it('mirrors the VERIFY pair exactly (absolute = base + relative)', () => {
+    expect(API_URL).toBe(`https://gitcert.harborstack.app${API_PATH_TEMPLATE}`);
+    expect(VERIFY_URL).toBe(`https://gitcert.harborstack.app${VERIFY_PATH_TEMPLATE}`);
+  });
+
+  it('leaves the badge snippet templates untouched', () => {
+    // Adding a template must not alter any md/html/react payload.
+    for (const snippet of Object.values(SNIPPET_TEMPLATES)) {
+      expect(snippet).not.toContain('/api/');
+      expect(snippet).not.toContain('.json');
+    }
   });
 });
