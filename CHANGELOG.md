@@ -9,6 +9,8 @@ versions carry fixes and polish.
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-07-27
+
 ### Fixed
 
 - Copy-button loading spinner no longer slides sideways — its rotation is now
@@ -19,6 +21,7 @@ versions carry fixes and polish.
 - `/docs` now covers personal vs organization accounts: installing on an org,
   the per-account grouping (personal first, orgs marked with an `org` chip),
   team-shared control, and org-wide disconnect behavior.
+- Added this changelog and pointed the docs "changelog ↗" link at it.
 
 ## [0.6.3] — 2026-07-27
 
@@ -141,7 +144,8 @@ Initial release.
 - Owner dashboard with GitHub OAuth sessions and tenant-scoped repo management.
 - Production Cloudflare and GitHub App configuration.
 
-[Unreleased]: https://github.com/supergithubo/gitcert/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/supergithubo/gitcert/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/supergithubo/gitcert/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/supergithubo/gitcert/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/supergithubo/gitcert/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/supergithubo/gitcert/compare/v0.6.0...v0.6.1
