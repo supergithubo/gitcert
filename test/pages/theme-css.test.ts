@@ -71,6 +71,17 @@ describe('app.css shared motion primitives', () => {
     expect(has('both')).toBe(true);
   });
 
+  it('gives the spinner a transform-origin so it spins in place, not orbiting the corner', () => {
+    // v0.6.3 bug: with no transform-origin, gcspin rotates around the SVG
+    // viewBox corner (0,0), so the copy loading spinner slides sideways
+    // instead of spinning in place. The rule must carry a transform-origin,
+    // and it must survive into the compiled stylesheet the browser loads.
+    const at = css.indexOf('[data-gc-spin]{');
+    expect(at).toBeGreaterThan(-1);
+    expect(css.slice(at, css.indexOf('}', at))).toContain('transform-origin');
+    expect(compiled).toContain('[data-gc-spin]{transform-origin');
+  });
+
   it.each([
     ['gcdraw', '@keyframes gcdraw'],
     ['gccheckdraw', '@keyframes gccheckdraw'],
@@ -98,7 +109,8 @@ describe('app.css shared motion primitives', () => {
   });
 
   it('keeps the shipped 0.9s spin — the mock’s .8s is mock-local', () => {
-    expect(has('[data-gc-spin]{animation:gcspin 0.9s linear infinite;}')).toBe(true);
+    expect(has('[data-gc-spin]{')).toBe(true);
+    expect(has('animation:gcspin 0.9s linear infinite;')).toBe(true);
     expect(has('gcspin 0.8s')).toBe(false);
   });
 });

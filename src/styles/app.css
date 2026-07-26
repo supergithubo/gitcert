@@ -309,8 +309,12 @@ body {
   }
 }
 
-/* Set by the script on a per-repo sync icon while its POST is in flight. */
+/* The copy-button loading spinner (a `<g data-gc-spin>`). `transform-origin`
+ * is REQUIRED: without it the rotation defaults to the SVG viewBox corner
+ * (0 0), so the spinner orbits that corner and visibly slides instead of
+ * spinning in place. `center` resolves to the viewBox centre (12,12). */
 [data-gc-spin] {
+  transform-origin: center;
   animation: gcspin 0.9s linear infinite;
 }
 
