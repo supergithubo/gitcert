@@ -30,6 +30,7 @@ import type { Metric } from '../badges/types';
 import { metricLabel } from '../badges/value';
 import { Layout } from './layout';
 import {
+  API_URL,
   BADGE_PATH_TEMPLATE,
   SNIPPET_BASE_URL,
   SNIPPET_TEMPLATES,
@@ -115,6 +116,26 @@ type RepoState = 'excluded' | 'collecting' | 'stale' | 'ok';
 const DASHBOARD_SCRIPT = `(function () {
   var stateEl = document.getElementById('gc-state');
   if (!stateEl) return;
+
+  /**
+   * Account-group collapse. The target rows are resolved THROUGH THE DOM
+   * (closest/querySelector) rather than by an account key baked into this
+   * string, which keeps the no-user-data-interpolation rule trivially true.
+   * Bound before the builder wiring so it works even for an account with no
+   * repos. Hiding (not re-rendering) the rows preserves builder selection.
+   */
+  Array.prototype.slice.call(document.querySelectorAll('button[data-acct-toggle]')).forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var group = btn.closest('[data-acct-group]');
+      var rowsEl = group ? group.querySelector('[data-acct-rows]') : null;
+      if (!rowsEl) return;
+      var expand = btn.getAttribute('aria-expanded') === 'false';
+      btn.setAttribute('aria-expanded', expand ? 'true' : 'false');
+      btn.setAttribute('aria-label', expand ? 'collapse section' : 'expand section');
+      rowsEl.classList.toggle('hidden', !expand);
+    });
+  });
+
   var state = JSON.parse(stateEl.textContent);
   var repos = [];
   state.accounts.forEach(function (a) {
@@ -135,12 +156,20 @@ const DASHBOARD_SCRIPT = `(function () {
   var verifyLink = document.getElementById('gc-verify-link');
   var verifyLabel = verifyLink ? verifyLink.querySelector('[data-verify-label]') : null;
   var verifyCopy = document.getElementById('gc-verify-copy');
+  var apiLink = document.getElementById('gc-api-link');
+  var apiLabel = apiLink ? apiLink.querySelector('[data-api-label]') : null;
+  var apiCopy = document.getElementById('gc-api-copy');
+  var urlCopyBtns = [];
+  if (verifyCopy) urlCopyBtns.push(verifyCopy);
+  if (apiCopy) urlCopyBtns.push(apiCopy);
   var copyBtns = Array.prototype.slice.call(document.querySelectorAll('button[data-copy]'));
   var rows = Array.prototype.slice.call(document.querySelectorAll('[data-repo-row]'));
   var syncBtns = Array.prototype.slice.call(document.querySelectorAll('button[data-repo-sync]'));
   var current = { repo: repos[0], style: 'flat', shown: 'md', buster: 0 };
   var copyTimer = null;
-  var verifyTimer = null;
+  var urlCopyTimers = {};
+  var COPY_DONE_MS = 620;
+  var COPY_RESET_MS = 2400;
 
   function fill(template, v) {
     return template.replace(/\\{(OWNER|REPO|METRIC|LABEL|STYLE|THEME)\\}/g, function (m, k) {
@@ -202,11 +231,11 @@ const DASHBOARD_SCRIPT = `(function () {
       b.classList.toggle('cursor-not-allowed', !canCopy);
       b.classList.toggle('cursor-pointer', canCopy);
     });
-    if (verifyCopy) {
-      verifyCopy.classList.toggle('opacity-45', !canCopy);
-      verifyCopy.classList.toggle('cursor-not-allowed', !canCopy);
-      verifyCopy.classList.toggle('cursor-pointer', canCopy);
-    }
+    urlCopyBtns.forEach(function (b) {
+      b.classList.toggle('opacity-45', !canCopy);
+      b.classList.toggle('cursor-not-allowed', !canCopy);
+      b.classList.toggle('cursor-pointer', canCopy);
+    });
   }
 
   function renderRowState(row, repo) {
@@ -244,9 +273,15 @@ const DASHBOARD_SCRIPT = `(function () {
   }
 
   function renderVerify(v) {
-    if (!verifyLink) return;
-    verifyLink.href = fill(tpl.verifyUrl, v);
-    if (verifyLabel) verifyLabel.textContent = v.OWNER + '/' + v.REPO;
+    if (verifyLink) {
+      verifyLink.href = fill(tpl.verifyUrl, v);
+      if (verifyLabel) verifyLabel.textContent = v.OWNER + '/' + v.REPO;
+    }
+    if (apiLink) {
+      // href carries the full absolute URL; the label shows the shortened form.
+      apiLink.href = fill(tpl.apiUrl, v);
+      if (apiLabel) apiLabel.textContent = '…/api/' + v.OWNER + '/' + v.REPO + '.json';
+    }
   }
 
   function render() {
@@ -257,10 +292,34 @@ const DASHBOARD_SCRIPT = `(function () {
     renderVerify(v);
   }
 
+  /**
+   * Copy motion: click → spinner, at 620ms → check, at 2400ms → idle. Phase
+   * is one attribute on the button; the three icons are static markup that
+   * app.css shows/hides, and [data-gc-check]'s fill-mode:both restarts the
+   * draw each time the node becomes visible.
+   */
+  function clearCopyPhase(btn) {
+    clearTimeout(btn.gcPhaseDone);
+    clearTimeout(btn.gcPhaseIdle);
+    btn.removeAttribute('data-copy-phase');
+  }
+
+  function runCopyPhase(btn) {
+    clearCopyPhase(btn);
+    btn.setAttribute('data-copy-phase', 'loading');
+    btn.gcPhaseDone = setTimeout(function () {
+      btn.setAttribute('data-copy-phase', 'done');
+    }, COPY_DONE_MS);
+    btn.gcPhaseIdle = setTimeout(function () {
+      btn.removeAttribute('data-copy-phase');
+    }, COPY_RESET_MS);
+  }
+
   function resetCopyButtons() {
     copyBtns.forEach(function (b) {
       b.removeAttribute('data-copied');
       b.classList.remove('border-accent', 'bg-panel', 'text-accent');
+      clearCopyPhase(b);
     });
   }
 
@@ -302,26 +361,38 @@ const DASHBOARD_SCRIPT = `(function () {
       resetCopyButtons();
       btn.setAttribute('data-copied', '');
       btn.classList.add('border-accent', 'bg-panel', 'text-accent');
+      runCopyPhase(btn);
       clearTimeout(copyTimer);
-      copyTimer = setTimeout(resetCopyButtons, 1600);
+      // The label swap clears in lockstep with the phase.
+      copyTimer = setTimeout(resetCopyButtons, COPY_RESET_MS);
     });
   });
 
-  if (verifyCopy) {
-    verifyCopy.addEventListener('click', function () {
+  /**
+   * The two Verification rows copy whatever their own link currently points
+   * at — the URL is read back off the DOM node the renderer just set, so no
+   * server data is ever interpolated into this script.
+   */
+  function bindUrlCopy(btn, link) {
+    if (!btn || !link) return;
+    btn.addEventListener('click', function () {
       if (!copyable()) return;
       try {
-        if (navigator.clipboard) navigator.clipboard.writeText(verifyLink.href);
+        if (navigator.clipboard) navigator.clipboard.writeText(link.href);
       } catch (e) {}
-      verifyCopy.setAttribute('data-copied', '');
-      verifyCopy.classList.add('border-accent', 'bg-panel', 'text-accent');
-      clearTimeout(verifyTimer);
-      verifyTimer = setTimeout(function () {
-        verifyCopy.removeAttribute('data-copied');
-        verifyCopy.classList.remove('border-accent', 'bg-panel', 'text-accent');
-      }, 1600);
+      btn.setAttribute('data-copied', '');
+      btn.classList.add('border-accent', 'bg-panel', 'text-accent');
+      runCopyPhase(btn);
+      clearTimeout(urlCopyTimers[btn.id]);
+      urlCopyTimers[btn.id] = setTimeout(function () {
+        btn.removeAttribute('data-copied');
+        btn.classList.remove('border-accent', 'bg-panel', 'text-accent');
+      }, COPY_RESET_MS);
     });
   }
+
+  bindUrlCopy(verifyCopy, verifyLink);
+  bindUrlCopy(apiCopy, apiLink);
 
   enableBtn.addEventListener('click', function () {
     var repo = current.repo;
@@ -354,23 +425,35 @@ const DASHBOARD_SCRIPT = `(function () {
    * stops spinning, so nothing here is an oracle.
    */
   var MIN_SPIN_MS = 1100;
+  var SYNC_DONE_MS = 1800;
   syncBtns.forEach(function (btn) {
-    var icon = btn.querySelector('svg');
     btn.addEventListener('click', function () {
       if (btn.disabled) return;
       var repo = repoFor(btn);
       if (!repo) return;
       btn.disabled = true;
-      if (icon) icon.setAttribute('data-gc-spin', '');
+      clearTimeout(btn.gcSyncIdle);
+      btn.setAttribute('data-sync-phase', 'loading');
       var startedAt = Date.now();
-      function stop() {
-        // Keep the icon spinning for a visible minimum even when the 202
-        // returns instantly — the collect runs in the background via
-        // waitUntil, so the fetch settling is not when the sync "finished".
+      /**
+       * Settles the button once the visible-minimum spin has elapsed — the
+       * collect runs in the background via waitUntil, so the fetch settling
+       * is not when the sync "finished". The done phase is reached ONLY from a
+       * real 202; every other outcome (non-202, network error, the 401
+       * redirect) returns to idle — the check is never guaranteed-success.
+       */
+      function stop(outcome) {
         setTimeout(
           function () {
             btn.disabled = false;
-            if (icon) icon.removeAttribute('data-gc-spin');
+            if (outcome !== 'done') {
+              btn.removeAttribute('data-sync-phase');
+              return;
+            }
+            btn.setAttribute('data-sync-phase', 'done');
+            btn.gcSyncIdle = setTimeout(function () {
+              btn.removeAttribute('data-sync-phase');
+            }, SYNC_DONE_MS);
           },
           Math.max(0, MIN_SPIN_MS - (Date.now() - startedAt)),
         );
@@ -398,13 +481,20 @@ const DASHBOARD_SCRIPT = `(function () {
       fetch('/repos/' + repo.id + '/refresh', { method: 'POST' })
         .then(function (res) {
           if (res.status === 401) {
+            stop('idle');
             location.href = '/auth/login';
             return;
           }
-          if (res.status === 202) markSynced();
-          stop();
+          if (res.status === 202) {
+            markSynced();
+            stop('done');
+            return;
+          }
+          stop('idle');
         })
-        .catch(stop);
+        .catch(function () {
+          stop('idle');
+        });
     });
   });
 })();`;
@@ -486,7 +576,12 @@ function DashboardCard(props: {
         collectedAt: r.collectedAt,
       })),
     })),
-    templates: { ...SNIPPET_TEMPLATES, badgePath: BADGE_PATH_TEMPLATE, verifyUrl: VERIFY_URL },
+    templates: {
+      ...SNIPPET_TEMPLATES,
+      badgePath: BADGE_PATH_TEMPLATE,
+      verifyUrl: VERIFY_URL,
+      apiUrl: API_URL,
+    },
   };
   const stateJson = JSON.stringify(state).replace(/</g, '\\u003c');
   return (
@@ -537,7 +632,17 @@ function AccountPanel(props: {
   );
 }
 
-/** One installation: header (login + `org` chip + count + gear) then rows. */
+/**
+ * One installation: header (login + `org` chip + count + gear) then rows.
+ *
+ * The login + chip live inside a `data-acct-toggle` button that collapses the
+ * group; the count and the gear stay OUTSIDE it, so no interactive element is
+ * ever nested inside another. Collapsing hides `[data-acct-rows]` with a class
+ * (a deliberate deviation from the comp, which re-renders `rows: []`) so the
+ * selected repo, the builder state, and the sync buttons all survive a
+ * collapse/expand round trip. Chevron rotation is the app.css
+ * `[aria-expanded='false'] [data-acct-chevron]` rule — no JS style writes.
+ */
 function AccountGroup(props: {
   account: DashboardAccount;
   selected: DashboardRepo | undefined;
@@ -547,9 +652,16 @@ function AccountGroup(props: {
   const { account, selected, nowIso, first } = props;
   const count = account.repos.length;
   return (
-    <div class={first ? '' : 'mt-[6px] border-t border-hair2 pt-[14px]'}>
-      <div class="flex items-baseline justify-between gap-[10px] px-2 pb-[9px]">
-        <span class="flex min-w-0 items-baseline gap-2">
+    <div data-acct-group class={first ? '' : 'mt-[6px] border-t border-hair2 pt-[14px]'}>
+      <div class="flex items-center justify-between gap-[10px] px-2 pb-[9px]">
+        <button
+          type="button"
+          data-acct-toggle
+          aria-expanded="true"
+          aria-label="collapse section"
+          class="flex min-w-0 cursor-pointer items-center gap-2 border-none bg-transparent p-0 text-left"
+        >
+          <ChevronIcon />
           <span class="truncate font-mono text-[12.5px] font-semibold tracking-[-0.2px] text-ink">
             {account.accountLogin}
           </span>
@@ -559,7 +671,7 @@ function AccountGroup(props: {
               org
             </span>
           ) : null}
-        </span>
+        </button>
         <span class="flex flex-none items-center gap-2">
           <span class="font-mono text-[10px] whitespace-nowrap text-muted">
             {count} {count === 1 ? 'repo' : 'repos'}
@@ -577,13 +689,15 @@ function AccountGroup(props: {
           </a>
         </span>
       </div>
-      {count === 0 ? (
-        <div class="px-[14px] py-[11px] font-mono text-[12px] text-faint">no repos selected</div>
-      ) : (
-        account.repos.map((repo) => (
-          <RepoRow repo={repo} selected={repo === selected} nowIso={nowIso} />
-        ))
-      )}
+      <div data-acct-rows>
+        {count === 0 ? (
+          <div class="px-[14px] py-[11px] font-mono text-[12px] text-faint">no repos selected</div>
+        ) : (
+          account.repos.map((repo) => (
+            <RepoRow repo={repo} selected={repo === selected} nowIso={nowIso} />
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -627,6 +741,7 @@ function RepoRow(props: { repo: DashboardRepo; selected: boolean; nowIso: string
         }`}
       >
         <SyncIcon />
+        <SyncCheckIcon />
       </button>
     </div>
   );
@@ -799,35 +914,70 @@ function BuilderPanel(props: { selected: DashboardRepo }) {
       </pre>
 
       <div class={`${PANEL_HEADING_CLASS} mt-7 mb-2`}>Verification</div>
-      {/* verify link + copy target track the selected repo; the inline script
-          sets .href and the label's textContent (DOM APIs, no HTML injection). */}
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[13px]">
-        <span class="text-muted">verify:</span>
-        <a
-          id="gc-verify-link"
-          data-nav
-          href={`${SNIPPET_BASE_URL}/verify/${initial.owner}/${initial.repo}`}
-          target="_blank"
-          rel="noopener"
-          class="text-accent"
-        >
-          <span data-verify-label>
-            {initial.owner}/{initial.repo}
-          </span>{' '}
-          ↗
-        </a>
-        <button
-          type="button"
-          id="gc-verify-copy"
-          aria-label="copy verify URL"
-          class={`inline-flex items-center rounded-[2px] border border-hair-strong bg-transparent p-[7px] text-soft ${
-            copyable ? 'cursor-pointer' : 'cursor-not-allowed opacity-45'
-          }`}
-        >
-          <CopyIcon />
-        </button>
+      {/* Two repo-scoped rows — neither varies with metric/style/theme, which is
+          why `api:` is a sibling of `verify:` and not a fourth copy tab. Both
+          links and both copy targets track the selected repo; the inline script
+          sets .href and the label's textContent (DOM APIs, no HTML injection).
+          The fixed-width labels column-align the two links; `truncate` keeps a
+          long owner/repo from overflowing the narrow mobile builder column. */}
+      <div class="flex flex-col gap-[6px] font-mono text-[13px]">
+        <div class="flex min-w-0 items-center gap-[10px]">
+          <span class="min-w-[48px] flex-none text-muted">verify:</span>
+          <a
+            id="gc-verify-link"
+            data-nav
+            href={`${SNIPPET_BASE_URL}/verify/${initial.owner}/${initial.repo}`}
+            target="_blank"
+            rel="noopener"
+            class="block min-w-0 flex-1 truncate text-accent"
+          >
+            <span data-verify-label>
+              {initial.owner}/{initial.repo}
+            </span>{' '}
+            ↗
+          </a>
+          <UrlCopyButton id="gc-verify-copy" label="copy verify URL" enabled={copyable} />
+        </div>
+        <div class="flex min-w-0 items-center gap-[10px]">
+          <span class="min-w-[48px] flex-none text-muted">api:</span>
+          {/* href/copy carry the FULL absolute URL; the label shows the
+              `…`-shortened form so the row stays readable at builder width. */}
+          <a
+            id="gc-api-link"
+            href={`${SNIPPET_BASE_URL}/api/${initial.owner}/${initial.repo}.json`}
+            target="_blank"
+            rel="noopener"
+            class="block min-w-0 flex-1 truncate text-accent"
+          >
+            <span data-api-label>
+              …/api/{initial.owner}/{initial.repo}.json
+            </span>{' '}
+            ↗
+          </a>
+          <UrlCopyButton id="gc-api-copy" label="copy API URL" enabled={copyable} />
+        </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The small bordered copy button used by both Verification rows. Identical
+ * markup and gating for `verify:` and `api:` — the id is the only difference,
+ * so the script can address each one.
+ */
+function UrlCopyButton(props: { id: string; label: string; enabled: boolean }) {
+  return (
+    <button
+      type="button"
+      id={props.id}
+      aria-label={props.label}
+      class={`inline-flex flex-none items-center rounded-[2px] border border-hair-strong bg-transparent p-[7px] text-soft ${
+        props.enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-45'
+      }`}
+    >
+      <CopyGlyphs />
+    </button>
   );
 }
 
@@ -847,7 +997,7 @@ function CopyButton(props: { kind: 'md' | 'html' | 'react'; label: string; enabl
       data-copy={kind}
       class={`${COPY_BTN_CLASS} ${enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-45'}`}
     >
-      <CopyIcon />
+      <CopyGlyphs />
       <span data-copy-idle class="group-data-copied:hidden">
         <span class="hidden sm:inline">copy </span>
         {label}
@@ -898,11 +1048,32 @@ function GearIcon() {
   );
 }
 
-/** Per-repo refresh glyph (comp line 119). */
+/** Account-group collapse chevron; rotation is CSS off `aria-expanded`. */
+function ChevronIcon() {
+  return (
+    <svg
+      data-acct-chevron
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--faint)"
+      stroke-width="3"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      class="block flex-none"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+/** Per-repo refresh glyph (comp line 119) — the sync button's idle/loading face. */
 function SyncIcon() {
   return (
     <svg
       data-sync
+      data-sync-icon="idle"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -915,6 +1086,27 @@ function SyncIcon() {
       <path d="M21 3v5h-5" />
       <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
       <path d="M8 16H3v5" />
+    </svg>
+  );
+}
+
+/**
+ * The sync button's `done` face. Only ever revealed by a real 202 from
+ * `POST /repos/:id/refresh` — a failed or rate-limited sync returns to idle.
+ */
+function SyncCheckIcon() {
+  return (
+    <svg
+      data-sync-icon="done"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--accent)"
+      stroke-width="2.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      class="block size-[13px] lg:size-[12px]"
+    >
+      <path data-gc-check d="M4 12 9 17L20 6" />
     </svg>
   );
 }
@@ -937,10 +1129,28 @@ function SealIcon() {
   );
 }
 
-/** Copy glyph from the comp's copy buttons. */
+/**
+ * All three faces of a copy button, rendered as STATIC markup. The script only
+ * flips the button's `data-copy-phase` attribute and app.css picks the visible
+ * one — no DOM is ever built in script (same discipline as the `data-copied`
+ * label spans). Shared by the md/html/react buttons and both Verification rows,
+ * so all five copy affordances animate identically.
+ */
+function CopyGlyphs() {
+  return (
+    <>
+      <CopyIcon />
+      <CopySpinnerIcon />
+      <CopyCheckIcon />
+    </>
+  );
+}
+
+/** Copy glyph from the comp's copy buttons — the idle face. */
 function CopyIcon() {
   return (
     <svg
+      data-copy-icon="idle"
       width="15"
       height="15"
       viewBox="0 0 24 24"
@@ -951,8 +1161,57 @@ function CopyIcon() {
       stroke-linejoin="round"
       class="flex-none"
     >
-      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <rect data-copy-rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
       <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  );
+}
+
+/** Copy `loading` face — the comp's eight-ray spinner. */
+function CopySpinnerIcon() {
+  return (
+    <svg
+      data-copy-icon="loading"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      class="flex-none"
+    >
+      <g data-gc-spin>
+        <path d="M12 2v4" />
+        <path d="m16.2 7.8 2.9-2.9" />
+        <path d="M18 12h4" />
+        <path d="m16.2 16.2 2.9 2.9" />
+        <path d="M12 18v4" />
+        <path d="m4.9 19.1 2.9-2.9" />
+        <path d="M2 12h4" />
+        <path d="m4.9 4.9 2.9 2.9" />
+      </g>
+    </svg>
+  );
+}
+
+/** Copy `done` face — the shared draw-on check. */
+function CopyCheckIcon() {
+  return (
+    <svg
+      data-copy-icon="done"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--accent)"
+      stroke-width="2.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      class="flex-none"
+    >
+      <path data-gc-check d="M4 12 9 17L20 6" />
     </svg>
   );
 }

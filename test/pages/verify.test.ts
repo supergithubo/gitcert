@@ -83,8 +83,89 @@ describe('VerifyPage', () => {
     const html = render(VerifyPage(fixtureProps()));
     expect(html).toContain('gc-verify-btn');
     expect(html).toContain("importKey('raw'");
+    // The canonical CardBrand seal is untouched by the button restructure.
     expect(html).toContain('m9 12 2 2 4-4');
-    expect(html).toContain('signature valid');
+    expect(html).toContain('data-seal-check');
+  });
+});
+
+/**
+ * The verify button's motion is driven by the REAL Ed25519 verification
+ * promise. The design mock faked it with a 900ms setTimeout; porting that
+ * would have made the page assert a result it never checked.
+ */
+describe('VerifyPage verify button (promise-driven)', () => {
+  /** The inline VERIFY_SCRIPT body. */
+  function script(html: string): string {
+    const at = html.indexOf("document.getElementById('gc-verify-btn')");
+    return html.slice(html.lastIndexOf('<script>', at), html.indexOf('</script>', at));
+  }
+
+  it('renders the three phase faces as static markup inside the button', () => {
+    const html = render(VerifyPage(fixtureProps()));
+    const btn = html.slice(html.indexOf('id="gc-verify-btn"'), html.indexOf('id="gc-sig-msg"'));
+    expect(btn).toContain('data-verify-icon="loading"');
+    expect(btn).toContain('data-gc-spin');
+    expect(btn).toContain('data-verify-icon="done"');
+    expect(btn).toContain('data-gc-check');
+    expect(btn).toContain('M4 12 9 17L20 6');
+    expect(btn).toContain('data-verify-idle');
+    expect(btn).toContain('>verify<');
+    expect(btn).toContain('data-verify-valid');
+    expect(btn).toContain('>valid<');
+  });
+
+  it('drops the separate "signature valid" pill (the check now lives in the button)', () => {
+    const html = render(VerifyPage(fixtureProps()));
+    expect(html).not.toContain('gc-sig-valid');
+    expect(html).not.toContain('signature valid');
+    // The failure/unavailable message target stays.
+    expect(html).toContain('id="gc-sig-msg"');
+  });
+
+  it('sets loading synchronously on click and done ONLY from a true verification', () => {
+    const s = script(render(VerifyPage(fixtureProps())));
+    expect(s).toContain("btn.setAttribute('data-verify-phase', 'loading')");
+    expect(s).toContain("if (valid) btn.setAttribute('data-verify-phase', 'done')");
+    // No faked timer anywhere — the mock's 900ms lie must not be ported.
+    expect(s).not.toContain('setTimeout');
+    expect(s).not.toContain('900');
+  });
+
+  it('returns to idle on an invalid signature and on a failed fetch', () => {
+    const s = script(render(VerifyPage(fixtureProps())));
+    // Both failure paths clear the phase, so the button is re-clickable and
+    // never shows the check — there is no guaranteed-valid outcome.
+    expect(s).toContain("btn.removeAttribute('data-verify-phase')");
+    expect(s).toContain("fail('signature invalid')");
+    expect(s).toContain("fail('verification unavailable in this browser')");
+  });
+
+  it('guards re-entry while loading or already done', () => {
+    const s = script(render(VerifyPage(fixtureProps())));
+    expect(s).toContain("if (btn.hasAttribute('data-verify-phase')) return;");
+  });
+
+  it('slices the signed bytes verbatim — never a JSON round-trip', () => {
+    const s = script(render(VerifyPage(fixtureProps())));
+    // Byte-identical to the shipped line. Re-serializing a parsed payload
+    // reorders/reformats and fails a genuine certificate (attestation rule).
+    expect(s).toContain(
+      `var payload = envelope.slice('{"payload":'.length, envelope.lastIndexOf(',"signature"'));`,
+    );
+    expect(s).not.toContain('JSON.stringify');
+    // The real WebCrypto path is untouched.
+    expect(s).toContain("crypto.subtle.verify('Ed25519'");
+    expect(s).toContain('results[1].public_key');
+    expect(s).toContain("fetch('/pubkey')");
+  });
+
+  it('is a constant script — no user data reaches it', () => {
+    const s = script(render(VerifyPage(fixtureProps({ owner: 'evil-owner', repo: 'evil-repo' }))));
+    expect(s).not.toContain('evil-owner');
+    expect(s).not.toContain('evil-repo');
+    // owner/repo are read from the URL at runtime instead.
+    expect(s).toContain('location.pathname.split');
   });
 
   it('escapes user-controlled strings', () => {
@@ -231,6 +312,7 @@ describe('VerifyPage footer (shared shell)', () => {
   it('renders the site footer', () => {
     const html = render(VerifyPage(fixtureProps()));
     expect(html).toContain('<footer');
-    expect(html).toContain('· Built by ');
+    // Attribution is its own centered grid cell now (no ' · ' concatenation).
+    expect(html).toContain('Built by');
   });
 });

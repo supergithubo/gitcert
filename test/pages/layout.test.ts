@@ -38,6 +38,16 @@ describe('Layout nav wordmark', () => {
     expect(anchor).toContain('text-ink');
     expect(anchor).toContain('font-mono text-[16px] font-semibold tracking-[-0.4px]');
   });
+
+  it('carries the seal hover-draw hook, emitted by seal.ts and not the call site', () => {
+    const html = render();
+    // The attribute reaches the header purely because sealSvg() emits it —
+    // layout.tsx passes no flag, so the seal stays the single draw site.
+    expect(html).toContain('<path data-seal-check d="m9 12 2 2 4-4"');
+    expect(sealSvg({ size: 19, kind: 'check', color: 'var(--accent)' })).toContain(
+      'data-seal-check',
+    );
+  });
 });
 
 describe('Layout favicon', () => {
@@ -74,30 +84,57 @@ describe('Layout footer', () => {
     expect(footerAt).toBeGreaterThan(html.indexOf('page-body-marker'));
     const footer = html.slice(footerAt, html.indexOf('</footer>'));
     expect(footer).toContain('border-t border-hair bg-panel');
-    expect(footer).toContain('font-mono text-[12px] text-muted');
+    // Small mono at base, one step up from sm.
+    expect(footer).toContain('font-mono text-[11px] text-muted');
+    expect(footer).toContain('sm:text-[12px]');
   });
 
-  it('puts the base stack AND the sm: left/right split on the one flex parent', () => {
+  it('puts the base centered stack AND the sm: 3-column grid on the one parent', () => {
     const html = render();
-    // The split only works if every class sits on the direct parent of the
-    // two footer cells — grab that element's own class list, not the subtree.
+    // Both layouts only work if every class sits on the direct parent of the
+    // three footer cells — grab that element's own class list, not the subtree.
     const inner = /<footer class="[^"]+"><div class="([^"]+)">/.exec(html);
     expect(inner).not.toBeNull();
     const cls = ` ${inner?.[1]} `;
     for (const c of [
       'flex',
-      'flex-col', // base: stacked
-      'sm:flex-row', // desktop: one row
+      'flex-col', // base: centered vertical stack
+      'items-center',
+      'justify-center',
+      'sm:grid', // desktop: the grid display wins, flex-col goes inert
+      'sm:grid-cols-[1fr_auto_1fr]', // copyright · attribution · GitHub
       'sm:items-center',
-      'sm:justify-between', // version flush left, links flush right
+      'sm:min-h-[52px]',
       'mx-auto',
       'max-w-[1120px]', // aligned to the page content column, not the viewport
     ]) {
       expect(cls).toContain(` ${c} `);
     }
+    // Superseded 2-part split — the middle cell can't center between them.
+    expect(cls).not.toContain(' sm:flex-row ');
+    expect(cls).not.toContain(' sm:justify-between ');
   });
 
-  it('has every footer-split utility in the COMPILED stylesheet (stale-build guard)', () => {
+  it('renders exactly three cells, ordered version → attribution → GitHub', () => {
+    const html = render();
+    const footer = html.slice(html.indexOf('<footer'), html.indexOf('</footer>'));
+    const version = footer.indexOf('GitCert v');
+    const built = footer.indexOf('Built by');
+    const github = footer.indexOf('View on GitHub');
+    // Source order already equals the mobile stacking order, so the mobile
+    // layout needs no order-* utilities.
+    expect(version).toBeGreaterThan(-1);
+    expect(built).toBeGreaterThan(version);
+    expect(github).toBeGreaterThan(built);
+    // Each cell claims its own grid column at sm.
+    expect(footer).toContain('sm:justify-self-start');
+    expect(footer).toContain('sm:justify-self-center');
+    expect(footer).toContain('sm:justify-self-end');
+    // All three stay on one line at desktop.
+    expect(footer.split('whitespace-nowrap').length - 1).toBe(3);
+  });
+
+  it('has every footer-layout utility in the COMPILED stylesheet (stale-build guard)', () => {
     // public/styles.css is a build artifact (npm run build:css). A class in
     // JSX that was never compiled silently no-ops in the browser — this is
     // exactly how the footer once rendered stacked+centered at desktop
@@ -105,12 +142,17 @@ describe('Layout footer', () => {
     const css = env.TEST_COMPILED_CSS;
     for (const sel of [
       '.flex-col',
-      '.sm\\:flex-row',
+      '.sm\\:grid',
+      '.sm\\:grid-cols-\\[1fr_auto_1fr\\]',
       '.sm\\:items-center',
-      '.sm\\:justify-between',
-      '.py-6',
+      '.sm\\:justify-self-start',
+      '.sm\\:justify-self-center',
+      '.sm\\:justify-self-end',
+      '.sm\\:min-h-\\[52px\\]',
+      '.py-\\[14px\\]',
       '.gap-2',
-      '.text-\\[12px\\]',
+      '.text-\\[11px\\]',
+      '.sm\\:text-\\[12px\\]',
       '.max-w-\\[1120px\\]',
     ]) {
       expect(css, `missing compiled utility ${sel} — run npm run build:css`).toContain(sel);
@@ -127,7 +169,10 @@ describe('Layout footer', () => {
     const footer = html.slice(html.indexOf('<footer'), html.indexOf('</footer>'));
     expect(footer).toContain(`href="${GITHUB_REPO_URL}"`);
     expect(footer).toContain('View on GitHub');
-    expect(footer).toContain(' · Built by ');
+    // The attribution is its own centered cell now — it no longer concatenates
+    // onto the GitHub link, so the leading ' · ' separator is gone.
+    expect(footer).toContain('Built by');
+    expect(footer).not.toContain(' · Built by ');
     const credit = footer.slice(footer.indexOf('href="https://wnston.dev"'));
     expect(credit).toContain('wnston.dev</a>');
     // Both external links open safely in a new tab, muted (no accent leak).

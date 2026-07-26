@@ -75,11 +75,18 @@ function count(html: string, needle: string): number {
   return html.split(needle).length - 1;
 }
 
-/** The markup slice for one repo row, from its wrapper to the next row/group. */
+/**
+ * The markup slice for one repo row, from its wrapper to the next row (or the
+ * end of its group). Bounded by the NEXT row rather than a fixed character
+ * window, so row markup can grow without silently truncating assertions.
+ */
 function rowBlock(html: string, id: number): string {
   const start = html.indexOf(`data-repo-row="true" data-repo-id="${id}"`);
   expect(start).toBeGreaterThan(-1);
-  return html.slice(start, start + 1400);
+  const next = html.indexOf('data-repo-row="true"', start + 1);
+  const groupEnd = html.indexOf('data-acct-group="true"', start + 1);
+  const bounds = [next, groupEnd].filter((i) => i > -1);
+  return html.slice(start, bounds.length ? Math.min(...bounds) : undefined);
 }
 
 describe('DashboardPage — header and account groups', () => {
@@ -91,7 +98,8 @@ describe('DashboardPage — header and account groups', () => {
     expect(html).toContain('Accounts');
     // Shared shell footer reaches the dashboard too.
     expect(html).toContain('<footer');
-    expect(html).toContain('· Built by ');
+    // Attribution is its own centered grid cell now (no ' · ' concatenation).
+    expect(html).toContain('Built by');
   });
 
   it('wires the signed-in account menu into the nav (handle threaded to Layout)', () => {
@@ -318,7 +326,8 @@ describe('DashboardPage — badge builder', () => {
     const html = render(DashboardPage(fixtureProps({ accounts })));
     expect(html).toContain('aria-pressed="false"');
     expect(html).toContain('bg-dot');
-    expect(count(html, 'cursor-not-allowed opacity-45')).toBe(4);
+    // 3 snippet buttons + the verify: and api: copy buttons.
+    expect(count(html, 'cursor-not-allowed opacity-45')).toBe(5);
     // Preview still points at the live endpoint — it renders not-found itself.
     expect(html).toContain('src="/b/wnston/client-platform/commits.svg?style=flat&amp;theme=auto"');
   });
@@ -329,7 +338,8 @@ describe('DashboardPage — badge builder', () => {
     // Included, so the enable toggle stays on…
     expect(html).toContain('aria-pressed="true"');
     // …but there is no attested value to copy yet.
-    expect(count(html, 'cursor-not-allowed opacity-45')).toBe(4);
+    // 3 snippet buttons + the verify: and api: copy buttons.
+    expect(count(html, 'cursor-not-allowed opacity-45')).toBe(5);
   });
 
   it('enables the copy affordance for an included repo with stats', () => {
@@ -393,11 +403,61 @@ describe('DashboardPage — state block and inline script', () => {
     expect(html).toContain('/verify/{OWNER}/{REPO}');
   });
 
-  it('verify link/copy track the repo via DOM APIs (no user data into JS)', () => {
+  it('verify/api links + copy track the repo via DOM APIs (no user data into JS)', () => {
     const html = render(DashboardPage(fixtureProps()));
     expect(html).toContain('verifyLink.href = fill(tpl.verifyUrl, v)');
     expect(html).toContain("verifyLabel.textContent = v.OWNER + '/' + v.REPO");
-    expect(html).toContain('navigator.clipboard.writeText(verifyLink.href)');
+    expect(html).toContain('apiLink.href = fill(tpl.apiUrl, v)');
+    expect(html).toContain("apiLabel.textContent = '…/api/' + v.OWNER + '/' + v.REPO + '.json'");
+    // Both rows copy whatever their OWN link currently points at — the URL is
+    // read back off the DOM node, never interpolated into the script.
+    expect(html).toContain('navigator.clipboard.writeText(link.href)');
+    expect(html).toContain('bindUrlCopy(verifyCopy, verifyLink)');
+    expect(html).toContain('bindUrlCopy(apiCopy, apiLink)');
+    // Labels and hrefs go through DOM APIs only.
+    expect(html).not.toContain('innerHTML');
+  });
+
+  it('renders the api: row as a styled sibling of verify:', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    expect(html).toContain('api:');
+    expect(html).toContain('id="gc-api-link"');
+    // href and copy target carry the FULL absolute URL…
+    expect(html).toContain(
+      'href="https://gitcert.harborstack.app/api/wnston/client-platform.json"',
+    );
+    // …while the visible label is the …-shortened form (U+2026, one char).
+    expect(html).toContain('…/api/wnston/client-platform.json');
+    expect(html).not.toContain('.../api/');
+    expect(html).toContain('data-api-label');
+    expect(html).toContain('id="gc-api-copy"');
+    expect(html).toContain('aria-label="copy API URL"');
+    // New-tab safety, mirroring every other external link.
+    const anchor = html.slice(html.indexOf('id="gc-api-link"'));
+    const open = anchor.slice(0, anchor.indexOf('>'));
+    expect(open).toContain('target="_blank"');
+    expect(open).toContain('rel="noopener"');
+    // Truncates rather than overflowing the narrow mobile builder column.
+    expect(open).toContain('truncate');
+    expect(open).toContain('min-w-0');
+  });
+
+  it('exposes the api template in the state block and nowhere else', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    expect(html).toContain('"apiUrl"');
+    expect(html).toContain('/api/{OWNER}/{REPO}.json');
+    // The api: row adds a template; it must not alter any badge snippet.
+    expect(html).toContain(
+      '[![commits](https://gitcert.harborstack.app/b/wnston/client-platform/commits.svg?style=flat&amp;theme=auto)](https://gitcert.harborstack.app/verify/wnston/client-platform)',
+    );
+  });
+
+  it('aligns the two Verification rows with a fixed label column', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    const block = html.slice(html.indexOf('>Verification<'), html.indexOf('id="gc-api-copy"'));
+    expect(block).toContain('flex flex-col gap-[6px]');
+    expect(count(block, 'min-w-[48px] flex-none')).toBe(2);
+    expect(count(block, 'flex min-w-0 items-center gap-[10px]')).toBe(2);
   });
 
   it('gates copying on included AND collected, in one predicate', () => {
@@ -411,22 +471,93 @@ describe('DashboardPage — state block and inline script', () => {
   it('wires per-repo sync to the refresh route and surfaces no error text', () => {
     const html = render(DashboardPage(fixtureProps()));
     expect(html).toContain("fetch('/repos/' + repo.id + '/refresh', { method: 'POST' })");
-    expect(html).toContain("icon.setAttribute('data-gc-spin', '')");
-    expect(html).toContain("icon.removeAttribute('data-gc-spin')");
+    // The spin now rides the button's phase attribute, not a per-icon
+    // data-gc-spin write (app.css owns the animation).
+    expect(html).toContain("btn.setAttribute('data-sync-phase', 'loading')");
+    expect(html).toContain("btn.removeAttribute('data-sync-phase')");
     expect(html).toContain("location.href = '/auth/login'");
     // Non-oracular: a 429/404 just stops spinning.
     expect(html).not.toContain('try again in a few minutes');
     expect(html).not.toContain('rate_limited');
   });
 
+  it('reaches the sync check ONLY on a real 202 — every failure returns to idle', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    // 202 is the single path to `done`.
+    expect(html).toContain(
+      "if (res.status === 202) {\n            markSynced();\n            stop('done');",
+    );
+    // Non-202, network error, and the 401 redirect all settle idle.
+    expect(count(html, "stop('idle')")).toBe(3);
+    expect(html).toContain("btn.setAttribute('data-sync-phase', 'done')");
+    // The visible-minimum spin floor is preserved.
+    expect(html).toContain('var MIN_SPIN_MS = 1100;');
+    // markSynced side effects are unchanged.
+    expect(html).toContain("label.setAttribute('data-live-text', 'just now')");
+  });
+
+  it('renders both sync faces as static markup, gated on the phase attribute', () => {
+    const block = rowBlock(render(DashboardPage(fixtureProps())), 101);
+    expect(block).toContain('data-sync-icon="idle"');
+    expect(block).toContain('data-sync-icon="done"');
+    expect(block).toContain('data-gc-check');
+    expect(block).toContain('M4 12 9 17L20 6');
+  });
+
   it('drives copied wording via the data-copied attribute only', () => {
     const html = render(DashboardPage(fixtureProps()));
     expect(html).toContain("btn.setAttribute('data-copied', '')");
     expect(html).toContain("b.removeAttribute('data-copied')");
-    expect(html).toContain('setTimeout(resetCopyButtons, 1600)');
+    // Reset moved 1600 → 2400ms so the label clears in lockstep with the
+    // three-phase icon animation.
+    expect(html).toContain('var COPY_RESET_MS = 2400;');
+    expect(html).toContain('setTimeout(resetCopyButtons, COPY_RESET_MS)');
+    expect(html).not.toContain('1600');
     expect(html).not.toContain("textContent = 'copied");
     expect(html).not.toContain('innerWidth');
     expect(html).not.toContain("matchMedia('(max-width");
+  });
+
+  it('runs all five copy affordances through the same three-phase animation', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    // 3 snippet buttons + verify: + api: — each carries all three static faces.
+    for (const face of ['idle', 'loading', 'done']) {
+      expect(count(html, `data-copy-icon="${face}"`)).toBe(5);
+    }
+    expect(html).toContain('var COPY_DONE_MS = 620;');
+    expect(html).toContain("btn.setAttribute('data-copy-phase', 'loading')");
+    expect(html).toContain("btn.setAttribute('data-copy-phase', 'done')");
+    expect(html).toContain('runCopyPhase(btn)');
+    // Icons are static markup toggled by attribute — never built in script.
+    expect(html).not.toContain('createElement');
+  });
+
+  it('collapses an account group by hiding its rows, never by re-rendering them', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    expect(count(html, 'data-acct-group="true"')).toBe(2);
+    expect(count(html, 'data-acct-toggle="true"')).toBe(2);
+    expect(count(html, 'data-acct-rows="true"')).toBe(2);
+    expect(count(html, 'aria-expanded="true"')).toBe(2);
+    expect(count(html, 'data-acct-chevron="true"')).toBe(2);
+    // Hiding (not re-rendering) is what preserves builder selection across a
+    // collapse round trip — the comp's `rows: []` would drop it.
+    expect(html).toContain("rowsEl.classList.toggle('hidden', !expand)");
+    expect(html).toContain("btn.setAttribute('aria-expanded', expand ? 'true' : 'false')");
+    // Target resolved THROUGH the DOM, never via a baked-in account key.
+    expect(html).toContain("btn.closest('[data-acct-group]')");
+    expect(html).toContain("group.querySelector('[data-acct-rows]')");
+  });
+
+  it('keeps the gear and repo count OUTSIDE the collapse button (no nested controls)', () => {
+    const html = render(DashboardPage(fixtureProps()));
+    const at = html.indexOf('data-acct-toggle="true"');
+    const btn = html.slice(html.lastIndexOf('<button', at), html.indexOf('</button>', at));
+    // The button holds the chevron, the login, and the org chip — nothing more.
+    expect(btn).toContain('data-acct-chevron');
+    expect(btn).toContain('wnston');
+    expect(btn).not.toContain('<a ');
+    expect(btn).not.toContain('Manage repos on GitHub');
+    expect(btn).not.toContain('repos<');
   });
 
   it('never interpolates user data into the script (placeholder substitution only)', () => {

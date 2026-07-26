@@ -37,10 +37,17 @@ export interface VerifyProps {
  * Browser-side Ed25519 verification (WebCrypto). Extracts the payload bytes
  * by slicing the envelope text — never JSON.parse→re-serialize on the
  * signed bytes (attestation rules).
+ *
+ * The button's spinner→check motion is driven by THIS promise, not a timer:
+ * `loading` is set synchronously on click and `done` is reached only inside
+ * the `.then` branch where the real verification returned true. An invalid
+ * signature or a failed fetch clears the phase and returns the button to
+ * idle, so there is no outcome that fakes a successful verification.
  */
 const VERIFY_SCRIPT = `(function () {
   var btn = document.getElementById('gc-verify-btn');
   if (!btn) return;
+  var msg = document.getElementById('gc-sig-msg');
   function show(el, display) {
     el.classList.remove('hidden');
     el.classList.add(display);
@@ -49,11 +56,16 @@ const VERIFY_SCRIPT = `(function () {
     el.classList.add('hidden');
     el.classList.remove(display);
   }
+  function fail(text) {
+    btn.removeAttribute('data-verify-phase');
+    msg.textContent = text;
+    show(msg, 'inline');
+  }
   btn.addEventListener('click', function () {
-    var ok = document.getElementById('gc-sig-valid');
-    var msg = document.getElementById('gc-sig-msg');
-    hide(ok, 'inline-flex');
+    // Non-interactive while the work is in flight or already settled valid.
+    if (btn.hasAttribute('data-verify-phase')) return;
     hide(msg, 'inline');
+    btn.setAttribute('data-verify-phase', 'loading');
     var parts = location.pathname.split('/');
     var api = '/api/' + parts[2] + '/' + parts[3] + '.json';
     Promise.all([
@@ -76,16 +88,12 @@ const VERIFY_SCRIPT = `(function () {
           });
       })
       .then(function (valid) {
-        if (valid) {
-          show(ok, 'inline-flex');
-        } else {
-          msg.textContent = 'signature invalid';
-          show(msg, 'inline');
-        }
+        // Reached ONLY on a genuine, valid Ed25519 verification.
+        if (valid) btn.setAttribute('data-verify-phase', 'done');
+        else fail('signature invalid');
       })
       .catch(function () {
-        msg.textContent = 'verification unavailable in this browser';
-        show(msg, 'inline');
+        fail('verification unavailable in this browser');
       });
   });
 })();`;
@@ -173,16 +181,54 @@ export function VerifyPage(props: VerifyProps) {
               ed25519{' '}
               {sigShort}
             </span>
+            {/* The check and the `valid` label live INSIDE the button (the
+                separate "signature valid" pill is gone). All three faces are
+                static markup; app.css shows one based on data-verify-phase,
+                which only the real verification promise ever sets. */}
             <button
               id="gc-verify-btn"
-              class="cursor-pointer rounded-[2px] border border-accent bg-card px-[11px] py-1 font-mono text-[11.5px] text-accent"
+              class="inline-flex cursor-pointer items-center gap-[6px] rounded-[2px] border border-accent bg-card px-[11px] py-1 font-mono text-[11.5px] text-accent"
             >
-              verify
+              <svg
+                data-verify-icon="loading"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="block"
+              >
+                <g data-gc-spin>
+                  <path d="M12 2v4" />
+                  <path d="m16.2 7.8 2.9-2.9" />
+                  <path d="M18 12h4" />
+                  <path d="m16.2 16.2 2.9 2.9" />
+                  <path d="M12 18v4" />
+                  <path d="m4.9 19.1 2.9-2.9" />
+                  <path d="M2 12h4" />
+                  <path d="m4.9 4.9 2.9 2.9" />
+                </g>
+              </svg>
+              <svg
+                data-verify-icon="done"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="block"
+              >
+                <path data-gc-check d="M4 12 9 17L20 6" />
+              </svg>
+              <span data-verify-idle>verify</span>
+              <span data-verify-valid>valid</span>
             </button>
-            <span id="gc-sig-valid" class="hidden items-center gap-[6px] text-[12.5px] text-accent">
-              {raw(sealSvg({ size: 14, kind: 'check', color: 'var(--accent)' }))}
-              signature valid
-            </span>
             <span id="gc-sig-msg" class="hidden text-[12.5px] text-muted" />
           </div>
         </div>

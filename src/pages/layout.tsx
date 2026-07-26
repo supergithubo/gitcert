@@ -226,35 +226,44 @@ function AccountMenu(props: { handle: string }) {
 /**
  * Site footer on every page (the cached signed-out landing included — safe
  * because everything here is build-constant, nothing per-request). Muted
- * small mono over a panel-tinted band with a hairline top rule; splits
- * left/right from `sm:`, stacks at base width. Links override the base
- * accent link color with text-muted (accent stays reserved for verified
- * states); external links mirror the nav's target/rel pattern.
+ * small mono over a panel-tinted band with a hairline top rule.
+ *
+ * Three cells, one element, two layouts: base is a centered vertical stack
+ * (version → attribution → GitHub, matching source order, so no `order-*`
+ * utilities are needed) and `sm:` switches to a `1fr auto 1fr` grid —
+ * copyright left, attribution optically centered, GitHub right. `sm:grid`
+ * wins the display race, so the base `flex flex-col` simply goes inert.
+ *
+ * The attribution is its own cell now (it used to concatenate onto the GitHub
+ * link), which is what lets the middle column center independently of the
+ * outer two. Links override the base accent link color with text-muted (accent
+ * stays reserved for verified states); external links mirror the nav's
+ * target/rel pattern. The version is ALWAYS build-time from root package.json.
  */
 function Footer() {
   return (
     <footer class="border-t border-hair bg-panel">
-      <div class="mx-auto flex max-w-[1120px] flex-col gap-2 px-4 py-6 font-mono text-[12px] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-7">
-        <div>GitCert v{version}</div>
-        <div class="inline-flex flex-wrap items-center gap-x-1 gap-y-1">
-          {/* "View on GitHub" moved here from the header (third-export
-              restructure) and now carries the GitHub mark. */}
-          <a
-            href={GITHUB_REPO_URL}
-            target="_blank"
-            rel="noopener"
-            class="inline-flex items-center gap-[6px] text-muted"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" class="block">
-              <path d={GITHUB_MARK_PATH} />
-            </svg>
-            View on GitHub
-          </a>
-          {' · Built by '}
+      <div class="mx-auto flex max-w-[1120px] flex-col items-center justify-center gap-2 px-4 py-[14px] font-mono text-[11px] text-muted sm:grid sm:min-h-[52px] sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-[14px] sm:px-7 sm:py-0 sm:text-[12px]">
+        <span class="whitespace-nowrap sm:justify-self-start">GitCert v{version}</span>
+        <span class="whitespace-nowrap sm:justify-self-center">
+          Built by{' '}
           <a href="https://wnston.dev" target="_blank" rel="noopener" class="text-muted">
             wnston.dev
           </a>
-        </div>
+        </span>
+        {/* "View on GitHub" moved here from the header (third-export
+            restructure) and carries the GitHub mark. */}
+        <a
+          href={GITHUB_REPO_URL}
+          target="_blank"
+          rel="noopener"
+          class="inline-flex items-center gap-[6px] whitespace-nowrap text-muted sm:justify-self-end"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" class="block">
+            <path d={GITHUB_MARK_PATH} />
+          </svg>
+          View on GitHub
+        </a>
       </div>
     </footer>
   );

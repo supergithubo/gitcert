@@ -324,14 +324,146 @@ a:hover [data-gear] {
   transform: rotate(180deg);
 }
 
+/*
+ * Seal hover-draw. `data-seal-check` is emitted by src/badges/seal.ts on the
+ * check path only, so every page seal (header, docs, verify, landing, auth)
+ * draws on hover from ONE canonical draw site. Inert inside badge SVGs: those
+ * are self-contained documents with their own inline <style> and no gcdraw
+ * keyframe, and dasharray 9 > the path's ~8.5 length, so offset 0 renders solid.
+ */
+@keyframes gcdraw {
+  from {
+    stroke-dashoffset: 9;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+[data-seal-check] {
+  stroke-dasharray: 9;
+  stroke-dashoffset: 0;
+}
+
+svg:hover [data-seal-check] {
+  animation: gcdraw 0.42s ease;
+}
+
+/*
+ * The shared success check (copy done, sync done, verify valid).
+ * `animation-fill-mode: both` means toggling the node between display:none and
+ * visible restarts the draw — no JS-side animation restart hack is needed.
+ */
+@keyframes gccheckdraw {
+  0% {
+    stroke-dashoffset: 27;
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+[data-gc-check] {
+  transform-origin: 12px 12px;
+  stroke-dasharray: 27;
+  animation: gccheckdraw 0.42s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/*
+ * Attribute-driven phase gating (same pattern as [data-account-menu][open] and
+ * [data-spy-link][data-active]): the inline scripts toggle ONE attribute on the
+ * button and CSS swaps between static icon children. No DOM is built in script.
+ */
+[data-copy-icon='loading'],
+[data-copy-icon='done'] {
+  display: none;
+}
+
+[data-copy-phase='loading'] [data-copy-icon='idle'],
+[data-copy-phase='done'] [data-copy-icon='idle'] {
+  display: none;
+}
+
+[data-copy-phase='loading'] [data-copy-icon='loading'],
+[data-copy-phase='done'] [data-copy-icon='done'] {
+  display: block;
+}
+
+[data-sync-icon='done'] {
+  display: none;
+}
+
+[data-sync-phase='loading'] [data-sync-icon='idle'] {
+  transform-origin: center;
+  animation: gcspin 0.9s linear infinite;
+}
+
+[data-sync-phase='done'] [data-sync-icon='idle'] {
+  display: none;
+}
+
+[data-sync-phase='done'] [data-sync-icon='done'] {
+  display: block;
+}
+
+[data-verify-icon='loading'],
+[data-verify-icon='done'],
+[data-verify-valid] {
+  display: none;
+}
+
+[data-verify-phase='loading'] [data-verify-icon='loading'],
+[data-verify-phase='done'] [data-verify-icon='done'] {
+  display: block;
+}
+
+[data-verify-phase='done'] [data-verify-idle] {
+  display: none;
+}
+
+[data-verify-phase='done'] [data-verify-valid] {
+  display: inline;
+}
+
+/* Non-interactive while the real verification promise is in flight or settled. */
+[data-verify-phase='loading'],
+[data-verify-phase='done'] {
+  cursor: default;
+}
+
+[data-verify-phase='loading'] {
+  opacity: 0.6;
+}
+
+/* Account-group collapse chevron: points down open, -90° collapsed. */
+[data-acct-chevron] {
+  transition: transform 0.18s ease;
+}
+
+[aria-expanded='false'] [data-acct-chevron] {
+  transform: rotate(-90deg);
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-gc-pulse],
-  [data-gc-spin] {
+  [data-gc-spin],
+  [data-gc-check],
+  [data-seal-check],
+  svg:hover [data-seal-check],
+  [data-sync-phase='loading'] [data-sync-icon='idle'] {
     animation: none;
   }
 
   [data-gear],
-  [data-sync] {
+  [data-sync],
+  [data-acct-chevron] {
     transition: none;
   }
 }

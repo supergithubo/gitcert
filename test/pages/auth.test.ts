@@ -43,6 +43,7 @@ describe('Auth pages footer (shared shell)', () => {
   it('renders the site footer on the auth page', () => {
     const html = render(AuthErrorPage());
     expect(html).toContain('<footer');
-    expect(html).toContain('· Built by ');
+    // Attribution is its own centered grid cell now (no ' · ' concatenation).
+    expect(html).toContain('Built by');
   });
 });

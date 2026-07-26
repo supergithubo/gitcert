@@ -6,8 +6,21 @@ describe('sealSvg', () => {
     const svg = sealSvg({ size: 13, kind: 'check', color: '#ffffff' });
     expect(svg).toContain('<circle cx="12" cy="12" r="10"');
     expect(svg).toContain('stroke-width="2"');
-    expect(svg).toContain('<path d="m9 12 2 2 4-4"');
+    // The check path carries the page-side hover-draw hook (app.css gcdraw).
+    // Emitted here so the seal stays the single canonical draw site.
+    expect(svg).toContain('<path data-seal-check d="m9 12 2 2 4-4"');
     expect(svg).toContain('viewBox="0 0 24 24"');
+  });
+
+  it('puts data-seal-check on the check path only — never on the circle or the stale seal', () => {
+    const check = sealSvg({ size: 20, kind: 'check', color: 'var(--accent)' });
+    expect(check.split('data-seal-check').length - 1).toBe(1);
+    expect(check.slice(check.indexOf('<circle'), check.indexOf('<path'))).not.toContain(
+      'data-seal-check',
+    );
+    expect(sealSvg({ size: 20, kind: 'stale', color: 'var(--faint)' })).not.toContain(
+      'data-seal-check',
+    );
   });
 
   it('renders the stale variant as a hollow circle only, stroke 1.5', () => {

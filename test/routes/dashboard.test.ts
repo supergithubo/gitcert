@@ -259,8 +259,9 @@ describe('GET /dashboard', () => {
     expect(html).toContain('collecting…');
     // Included, so the enable toggle is on…
     expect(html).toContain('aria-pressed="true"');
-    // …but there is nothing attested to copy yet.
-    expect(html.split('cursor-not-allowed opacity-45').length - 1).toBe(4);
+    // …but there is nothing attested to copy yet: 3 snippet buttons plus the
+    // verify: and api: copy buttons are all dimmed under the same gate.
+    expect(html.split('cursor-not-allowed opacity-45').length - 1).toBe(5);
   });
 
   it('disables the copy affordance for an excluded repo (edge case)', async () => {
@@ -283,7 +284,8 @@ describe('GET /dashboard', () => {
 
     expect(html).toContain('excluded');
     expect(html).toContain('aria-pressed="false"');
-    expect(html.split('cursor-not-allowed opacity-45').length - 1).toBe(4);
+    // 3 snippet buttons + the verify: and api: copy buttons, one gate.
+    expect(html.split('cursor-not-allowed opacity-45').length - 1).toBe(5);
   });
 
   it('renders an installation with zero live repos as an empty group (edge case)', async () => {

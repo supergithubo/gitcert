@@ -29,6 +29,11 @@ export function sealSvg(options: SealOptions): string {
   const style = positioned ? 'overflow:visible' : 'display:block';
   const stroke = `fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round"`;
   const circle = `<circle cx="12" cy="12" r="10" ${stroke} stroke-width="${kind === 'stale' ? '1.5' : '2'}"/>`;
-  const check = kind === 'check' ? `<path d="m9 12 2 2 4-4" ${stroke} stroke-width="2"/>` : '';
+  // `data-seal-check` is the page-side hover-draw hook (app.css `gcdraw`).
+  // Emitted here because this is the ONE place the seal is drawn — never at
+  // call sites. Inert inside a badge SVG: those documents carry their own
+  // inline <style> with no `gcdraw` keyframe, so the attribute is a no-op there.
+  const check =
+    kind === 'check' ? `<path data-seal-check d="m9 12 2 2 4-4" ${stroke} stroke-width="2"/>` : '';
   return `<svg${position} width="${size}" height="${size}" viewBox="0 0 24 24" style="${style}">${circle}${check}</svg>`;
 }

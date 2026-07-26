@@ -47,6 +47,62 @@ describe('app.css docs scrollspy active-nav rule (issue #1)', () => {
   });
 });
 
+describe('app.css shared motion primitives', () => {
+  /**
+   * Compiled containment. `--minify` strips the quotes off attribute values
+   * (`[data-copy-phase='done']` → `[data-copy-phase=done]`), so the compiled
+   * side is compared quote- and whitespace-insensitively; the source side keeps
+   * its prettier-formatted quotes.
+   */
+  const loose = (s: string) => s.replace(/\s+/g, '').replace(/'/g, '');
+  const compiled = loose(env.TEST_COMPILED_CSS);
+  const inBoth = (fragment: string) => has(fragment) && compiled.includes(loose(fragment));
+
+  it('defines the seal hover-draw keyframe and its hook', () => {
+    expect(has('@keyframes gcdraw')).toBe(true);
+    expect(has('[data-seal-check]{stroke-dasharray:9;stroke-dashoffset:0;}')).toBe(true);
+    expect(has('svg:hover [data-seal-check]{animation:gcdraw 0.42s ease;}')).toBe(true);
+  });
+
+  it('defines the shared success-check keyframe with fill-mode both', () => {
+    expect(has('@keyframes gccheckdraw')).toBe(true);
+    expect(has('[data-gc-check]{')).toBe(true);
+    expect(has('stroke-dasharray:27;')).toBe(true);
+    expect(has('both')).toBe(true);
+  });
+
+  it.each([
+    ['gcdraw', '@keyframes gcdraw'],
+    ['gccheckdraw', '@keyframes gccheckdraw'],
+    ['[data-seal-check]', '[data-seal-check]'],
+    ['[data-gc-check]', '[data-gc-check]'],
+    ['copy phase', "[data-copy-phase='done'] [data-copy-icon='done']"],
+    ['sync phase', "[data-sync-phase='done'] [data-sync-icon='done']"],
+    ['verify phase', "[data-verify-phase='done'] [data-verify-valid]"],
+    ['chevron', "[aria-expanded='false'] [data-acct-chevron]"],
+  ] as const)('survives build:css into the compiled stylesheet — %s', (_label, fragment) => {
+    // public/styles.css is the artifact the browser loads: a source-only rule
+    // that never made it through `npm run build:css` silently no-ops.
+    expect(inBoth(fragment), `missing ${fragment} — run npm run build:css`).toBe(true);
+  });
+
+  it('gives every new animation hook a prefers-reduced-motion entry', () => {
+    const at = css.indexOf('@media(prefers-reduced-motion:reduce){');
+    expect(at).toBeGreaterThan(-1);
+    const block = css.slice(at, css.indexOf('}}', at));
+    for (const hook of ['[data-gc-check]', '[data-seal-check]', '[data-acct-chevron]']) {
+      expect(block, `${hook} has no reduced-motion entry`).toContain(hook);
+    }
+    expect(block).toContain('animation:none');
+    expect(block).toContain('transition:none');
+  });
+
+  it('keeps the shipped 0.9s spin — the mock’s .8s is mock-local', () => {
+    expect(has('[data-gc-spin]{animation:gcspin 0.9s linear infinite;}')).toBe(true);
+    expect(has('gcspin 0.8s')).toBe(false);
+  });
+});
+
 describe('app.css --gc-* overrides mirror src/badges/theme.ts', () => {
   const flatNormal = FLAT_COLORS.value.normal;
 

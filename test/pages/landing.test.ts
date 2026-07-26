@@ -316,7 +316,8 @@ describe('LandingPage footer (shared shell)', () => {
     for (const auth of [null, authed(2)] as const) {
       const html = render(auth);
       expect(html).toContain('<footer');
-      expect(html).toContain('· Built by ');
+      // Attribution is its own centered grid cell now (no ' · ' concatenation).
+      expect(html).toContain('Built by');
       expect(html).toContain('href="https://wnston.dev"');
     }
   });
