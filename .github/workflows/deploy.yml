@@ -1,0 +1,82 @@
+# Production deploy (spec overview §Step 4). Every push to `main` builds,
+# tests, and ships the Worker — "deploy" is now "merge to main", not a
+# maintainer running `wrangler deploy` from a laptop (see the `deploy`
+# skill's §5, and CLAUDE.md's Release section).
+#
+# No `paths-ignore`. Deliberately — skipping doc-only commits would let the
+# footer/`/version` SHA drift behind head-of-main, which silently breaks
+# this entire feature: the whole point is that the deployed commit always
+# matches `main`. Every commit to `main` must redeploy, no exceptions.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+# CI never commits back to the repo (the build-info stamp below is
+# runner-only — see the stamp step), so it only needs read access.
+permissions:
+  contents: read
+
+# A second push queues behind an in-flight deploy instead of cancelling it
+# mid-upload — a cancelled `wrangler deploy` can leave the Worker half
+# updated.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Runs BEFORE the stamp step below: `npm run lint` is
+      # `prettier --check .`, and the heredoc-generated `build-info.ts`
+      # content would eventually fail a prettier check of its own (ordering
+      # is load-bearing, not style — spec overview §Step 4).
+      - run: npm run lint
+
+      # Overwrites the committed `'dev'` placeholder with this run's real
+      # provenance, IN THE RUNNER ONLY — never committed back (`permissions:
+      # contents: read` above has no write scope to do so anyway). Runs
+      # BEFORE `check`/`test` below: the bytes that get typechecked and
+      # tested must be the exact bytes that get uploaded, or a stamp-time
+      # regression could ship untested.
+      # The type annotation is intentional and must match src/build-info.ts's
+      # committed shape exactly: an explicit `{ readonly ...: string }`
+      # object type, not `as const`. Without it, this real-SHA rewrite would
+      # infer literal string types for commit/runId/builtAt instead of
+      # `string`, breaking every consumer's `BUILD.commit !== 'dev'` check
+      # at typecheck time (the same `never`-narrowing failure the committed
+      # placeholder's `as const` used to cause).
+      - name: Stamp build-info.ts
+        run: |
+          cat > src/build-info.ts <<EOF
+          export const BUILD: { readonly commit: string; readonly runId: string; readonly builtAt: string } = {
+            commit: '${{ github.sha }}',
+            runId: '${{ github.run_id }}',
+            builtAt: '$(date -u +%Y-%m-%dT%H:%M:%SZ)',
+          };
+          EOF
+
+      # Regenerates the tracked `public/styles.css` asset so the uploaded
+      # stylesheet matches this build. Runs before `check`/deploy for the
+      # same reason as the stamp above — never committed back.
+      - run: npm run build:css
+
+      - run: npm run check
+
+      - run: npm test
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

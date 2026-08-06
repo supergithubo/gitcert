@@ -7,3 +7,8 @@ migrations
 *.sql
 .dev.vars
 .dev.vars.*
+# CI stamps this file wholesale via heredoc (spec overview §Step 1/§Step 4)
+# — kept out of prettier's check regardless of workflow step order (defense
+# in depth behind lint-before-stamp), and out of formatting churn on the
+# committed 'dev' placeholder.
+src/build-info.ts

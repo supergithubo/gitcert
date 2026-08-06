@@ -87,6 +87,42 @@ checked, not taken on faith.
   [`src/collector/`](src/collector) — open it and see exactly which
   GraphQL fields are requested and how a snapshot becomes a signature.
 
+## Verifying this deployment
+
+The repo is public, but until now nothing bound the audited source to the
+running deployment — deploys came from a maintainer's laptop. As of this
+feature, every push to `main` is what deploys: GitHub Actions checks out
+that exact commit, runs lint/typecheck/tests, and only then ships it.
+
+Check what commit is actually live:
+
+```sh
+curl -s https://gitcert.harborstack.app/version
+```
+
+```json
+{
+  "version": "0.6.4",
+  "commit": "<full 40-char sha>",
+  "commit_short": "<first 7 chars>",
+  "run_id": "<github actions run id>",
+  "built_at": "<UTC ISO 8601 build timestamp>",
+  "source_url": "https://github.com/supergithubo/gitcert/commit/<sha>",
+  "run_url": "https://github.com/supergithubo/gitcert/actions/runs/<run_id>"
+}
+```
+
+Compare `commit` against this repo's head-of-`main`, then open `run_url` to
+read the public build log for that exact deploy. The footer on every page
+links the same way.
+
+**This proves nothing cryptographically** — Cloudflare Workers has no remote
+attestation, and the Worker is simply self-reporting its own commit SHA.
+What it does do is close the accidental-drift gap (no more shipping a dirty
+or untagged tree unnoticed) and narrow the deliberate one: a maintainer who
+wants to deploy unpublished code now also has to publish a false SHA against
+a public Actions log to hide it.
+
 ## Self-hosting
 
 GitCert is one Cloudflare Worker, one D1 database, and a cron trigger — no
@@ -127,9 +163,26 @@ separate frontend, no Node server.
    | `SIGNING_KEY`            | secret | Ed25519 seed (base64, raw 32 bytes) — signs payloads    |
    | `SESSION_SECRET`         | secret | HMAC key for the stateless owner-session cookie         |
 
+   A fork also inherits `.github/workflows/deploy.yml`, which deploys on
+   every push to `main`. That needs its own **GitHub repo secrets**
+   (Settings → Secrets and variables → Actions) — distinct from the Worker
+   secrets above, which `wrangler secret put` sets instead:
+
+   | Name                    | Kind               | Purpose                                                    |
+   | ----------------------- | ------------------ | ---------------------------------------------------------- |
+   | `CLOUDFLARE_API_TOKEN`  | GitHub repo secret | Scopes: _Workers Scripts: Edit_ + the zone for your route  |
+   | `CLOUDFLARE_ACCOUNT_ID` | GitHub repo secret | Account the `cloudflare/wrangler-action` step deploys into |
+
+   The workflow fails safely without them (a push just fails to deploy;
+   production is untouched). Either way, replace `wrangler.toml`'s route/zone
+   and D1 `database_id` with your own before the first deploy — those still
+   point at the maintainer's.
+
 5. **Cron trigger** — already declared in `wrangler.toml` (`*/15 * * * *`);
    adjust if you want a different collection cadence.
-6. **Deploy:**
+6. **Deploy:** push to `main` — `.github/workflows/deploy.yml` builds, tests,
+   and deploys automatically once the two repo secrets above are set. For a
+   one-off manual deploy instead (e.g. before wiring up the two secrets):
    ```sh
    npm run build:css
    npx wrangler deploy

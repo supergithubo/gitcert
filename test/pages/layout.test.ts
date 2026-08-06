@@ -5,10 +5,34 @@
  * into the cached signed-out landing variant).
  */
 import { env } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { version as pkgVersion } from '../../package.json';
 import { sealSvg } from '../../src/badges/seal';
 import { GITHUB_MARK_PATH, GITHUB_REPO_URL, Layout, initials } from '../../src/pages/layout';
+
+/** A CI-shaped 40-char SHA; its 7-char prefix must never reach footer text. */
+const CI_SHA = '9f2c1ab7d4e35608bb0f19c2ae7431d5c6802f4a';
+
+/**
+ * Render the footer as it would look on a CI build.
+ *
+ * `src/build-info.ts` is a module constant that CI rewrites in the runner, so
+ * the checked-in tree can only ever show vitest the `'dev'` sentinel. Hoisted
+ * `vi.mock` does NOT work here: in `@cloudflare/vitest-pool-workers` it
+ * intercepts only the test file's own import of the mocked module, not the
+ * transitive one inside `src/pages/layout.tsx` (verified — the static-mock
+ * form renders the real `'dev'` build). `vi.doMock` + `vi.resetModules()` +
+ * a dynamic re-import of the page does reach it, because the whole graph is
+ * re-resolved through the mock registry.
+ */
+async function renderWithBuildCommit(commit: string): Promise<string> {
+  vi.resetModules();
+  vi.doMock('../../src/build-info', () => ({
+    BUILD: { commit, runId: '1234567890', builtAt: '2026-08-06T00:00:00Z' },
+  }));
+  const { Layout: MockedLayout } = await import('../../src/pages/layout');
+  return String(MockedLayout({ title: 'GitCert — test', children: 'page-body-marker' }));
+}
 
 function render(): string {
   return String(Layout({ title: 'GitCert — test', children: 'page-body-marker' }));
@@ -196,6 +220,54 @@ describe('Layout footer', () => {
     const anchor = footer.slice(footer.indexOf('href="' + GITHUB_REPO_URL));
     const anchorEnd = anchor.indexOf('</a>');
     expect(anchor.slice(0, anchorEnd)).toContain(GITHUB_MARK_PATH);
+  });
+});
+
+describe('Layout footer build provenance', () => {
+  afterEach(() => {
+    vi.doUnmock('../../src/build-info');
+    vi.resetModules();
+  });
+
+  function footerOf(html: string): string {
+    return html.slice(html.indexOf('<footer'), html.indexOf('</footer>'));
+  }
+
+  /** Visible text only — attribute values (href, title) stripped out. */
+  function visibleText(html: string): string {
+    return html.replace(/<[^>]*>/g, ' ');
+  }
+
+  it('renders the version as plain unlinked text on a non-CI build', () => {
+    // Unmocked: the committed build-info placeholder is `'dev'`, so this is
+    // exactly what a local `wrangler dev` or a break-glass `wrangler deploy`
+    // ships. A build that cannot name its commit must make no provenance
+    // claim at all — the unlinked footer IS the signal that this deploy came
+    // from nowhere public.
+    const html = footerOf(render());
+    const cell = html.slice(html.indexOf('sm:justify-self-start'), html.indexOf('Built by'));
+    expect(cell).toContain(`GitCert v${pkgVersion}`);
+    expect(cell).not.toContain('<a ');
+    expect(html).not.toContain('/commit/');
+    expect(html).not.toContain('Deployed from commit');
+  });
+
+  it('links the version to the deployed commit on a CI build, full SHA in the tooltip', async () => {
+    const html = footerOf(await renderWithBuildCommit(CI_SHA));
+    const cell = html.slice(html.indexOf('sm:justify-self-start'), html.indexOf('Built by'));
+    expect(cell).toContain(`href="${GITHUB_REPO_URL}/commit/${CI_SHA}"`);
+    // Tooltip carries the FULL sha — the thing an auditor compares against
+    // `git rev-parse origin/main`.
+    expect(cell).toContain(`title="Deployed from commit ${CI_SHA}"`);
+    // Whole version string is the link target, muted, same target/rel as the
+    // sibling attribution link.
+    expect(cell).toContain(`GitCert v${pkgVersion}</a>`);
+    expect(cell).toContain('target="_blank"');
+    expect(cell).toContain('rel="noopener"');
+    expect(cell).toContain('text-muted');
+    // No short SHA in the rendered text: the footer keeps its exact length
+    // and weight, linked or not. /verify carries the human-readable hash.
+    expect(visibleText(html)).not.toContain(CI_SHA.slice(0, 7));
   });
 });
 

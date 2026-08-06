@@ -9,6 +9,18 @@ versions carry fixes and polish.
 
 ## [Unreleased]
 
+### Added
+
+- `GET /version` — reports the running deployment's commit, build timestamp,
+  and Actions run, alongside a footer link back to that commit. Deployed
+  from a public commit by GitHub Actions; not a cryptographic proof of
+  anything.
+
+### Changed
+
+- Deploys now run from GitHub Actions on push to `main` instead of a
+  maintainer running `wrangler deploy` locally.
+
 ## [0.6.4] — 2026-07-27
 
 ### Fixed

@@ -882,6 +882,29 @@ function SectionTrust() {
           </a>
           . Audit exactly which fields are touched and how each response is signed.
         </TrustPoint>
+        {/* Provenance belongs here in s9 rather than in a section of its own:
+            it answers the question the point above provokes — "is the public
+            code the running code?" — and the docs are hard-wired to exactly
+            ten sections (file docblock, NAV_ITEMS, and SCROLLSPY_SCRIPT all
+            enumerate s1–s10). Wording stays "deployed from" / "built by":
+            this is a checkable claim, never a cryptographic assurance. */}
+        <TrustPoint title="Deployed from a public commit">
+          Every push to <span class={MONO_INLINE}>main</span> is built and deployed by{' '}
+          <a
+            href={`${GITHUB_REPO_URL}/actions`}
+            target="_blank"
+            rel="noopener"
+            class="text-soft underline underline-offset-2 hover:text-accent"
+          >
+            GitHub Actions
+          </a>
+          , and <span class={MONO_INLINE}>/version</span> reports the commit the running service was
+          built from — compare it against the repository&apos;s head of{' '}
+          <span class={MONO_INLINE}>main</span> at any time. Read it for what it is: a published
+          claim, not a proof. The service reports its own commit, and nothing here checks that the
+          way a signature checks a payload. What it does close off is the quiet deploy — the running
+          code can no longer change without a matching public commit and a public build log.
+        </TrustPoint>
       </div>
     </Section>
   );
@@ -908,6 +931,15 @@ function SectionSelfHosting() {
         Prefer to run the whole thing yourself? The collector, signer, and badge renderer are open
         source. Point your own GitHub App at your own deployment and issue certificates under a key
         you control.
+      </p>
+      <p class={`mb-5 ${BODY_CLASS}`}>
+        A fork inherits <span class={MONO_INLINE}>.github/workflows/deploy.yml</span>, which deploys
+        on every push to <span class={MONO_INLINE}>main</span>. It fails safely until you add your
+        own <span class={MONO_INLINE}>CLOUDFLARE_API_TOKEN</span> and{' '}
+        <span class={MONO_INLINE}>CLOUDFLARE_ACCOUNT_ID</span> repository secrets — without them the
+        run stops at the deploy step and changes nothing. Then edit{' '}
+        <span class={MONO_INLINE}>wrangler.toml</span>: its route, zone, and D1 database id all
+        still point at this deployment, so replace them before your first deploy.
       </p>
       <a
         data-nav

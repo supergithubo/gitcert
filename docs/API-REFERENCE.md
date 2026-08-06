@@ -154,6 +154,37 @@ The Ed25519 public key used to verify every `/api/*.json` signature.
   ```
 - `Cache-Control: public, max-age=86400`. No `ETag`. Served through `caches.default`.
 
+## `GET /version`
+
+Build provenance for the currently-running deployment (spec overview,
+"Build provenance" feature). Answers "what commit is this" — a build-time
+self-report, not a cryptographic proof of anything (CLAUDE.md honesty
+constraint: never call this "verified", "proven", or "attested").
+
+- **Auth:** none. Public, CORS-open.
+- **200**, `Content-Type: application/json`:
+  ```json
+  {
+    "version": "<root package.json version>",
+    "commit": "<full sha, or 'dev' on a local/non-CI build>",
+    "commit_short": "<first 7 chars of commit, or 'dev'>",
+    "run_id": "<github actions run id, or 'dev'>",
+    "built_at": "<UTC ISO 8601 build timestamp, or 'dev'>",
+    "source_url": "<GITHUB_REPO_URL>/commit/<commit>",
+    "run_url": "<GITHUB_REPO_URL>/actions/runs/<run_id>"
+  }
+  ```
+  `commit`/`run_id`/`built_at` come from `src/build-info.ts`'s `BUILD`
+  export, stamped by `.github/workflows/deploy.yml` at build time in CI and
+  never committed back — a local `wrangler dev` or a broken-runner
+  `npx wrangler deploy` sees the committed `'dev'` sentinel on every field.
+- `Cache-Control: public, max-age=60` — a deliberate deviation from
+  `/pubkey`'s `max-age=86400`: this endpoint exists to be compared against
+  `git rev-parse HEAD` immediately after a deploy, so a long TTL would have
+  auditors comparing a stale answer. **No** `caches.default` (no
+  `edgeCache`), **no** D1 read, **no** GitHub fetch — `BUILD` is a
+  module-level constant, so there is nothing to look up.
+
 ## `GET /healthz`
 
 Operational probe — collector freshness, not a product surface.

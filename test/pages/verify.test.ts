@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PublicStats } from '../../src/lib/types';
+import { GITHUB_REPO_URL } from '../../src/pages/layout';
 import {
   VerifyCollectingPage,
   VerifyNotFoundPage,
@@ -314,5 +315,49 @@ describe('VerifyPage footer (shared shell)', () => {
     expect(html).toContain('<footer');
     // Attribution is its own centered grid cell now (no ' · ' concatenation).
     expect(html).toContain('Built by');
+  });
+});
+
+describe('VerifyPage build provenance', () => {
+  const CI_SHA = '9f2c1ab7d4e35608bb0f19c2ae7431d5c6802f4a';
+  const CI_RUN = '17654321098';
+
+  afterEach(() => {
+    vi.doUnmock('../../src/build-info');
+    vi.resetModules();
+  });
+
+  it('omits the provenance line entirely on a non-CI build', () => {
+    // Unmocked, so `BUILD.commit` is the committed `'dev'` sentinel. A
+    // /verify page announcing "deployed from commit dev" would be worse than
+    // silence, so the line is absent rather than degraded.
+    const html = render(VerifyPage(fixtureProps()));
+    expect(html).not.toContain('Deployed from commit');
+    expect(html).not.toContain('GitHub Actions');
+    expect(html).not.toContain('/commit/dev');
+  });
+
+  it('renders the readable short SHA linked to the commit and the Actions run', async () => {
+    // Hoisted `vi.mock` does not reach modules imported by the page under
+    // test in the Workers pool; doMock + resetModules + dynamic import does.
+    // See test/pages/layout.test.ts for the full note.
+    vi.resetModules();
+    vi.doMock('../../src/build-info', () => ({
+      BUILD: { commit: CI_SHA, runId: CI_RUN, builtAt: '2026-08-06T00:00:00Z' },
+    }));
+    const { VerifyPage: MockedVerifyPage } = await import('../../src/pages/verify');
+    const html = render(MockedVerifyPage(fixtureProps()));
+
+    expect(html).toContain('Deployed from commit');
+    expect(html).toContain(`href="${GITHUB_REPO_URL}/commit/${CI_SHA}"`);
+    expect(html).toContain(`href="${GITHUB_REPO_URL}/actions/runs/${CI_RUN}"`);
+    // Unlike the footer, this page shows the hash as readable text — it is
+    // the surface a human compares against head-of-main.
+    expect(html).toContain(`>${CI_SHA.slice(0, 7)}<`);
+    expect(html).toContain('GitHub Actions');
+    // Honesty constraint: the deployment is a published claim, never a proof.
+    for (const overclaim of ['verified commit', 'proven', 'attested commit', 'guaranteed']) {
+      expect(html.slice(html.indexOf('Deployed from commit'))).not.toContain(overclaim);
+    }
   });
 });

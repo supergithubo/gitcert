@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
 import type { Env } from '../env';
+import { version } from '../../package.json';
+import { BUILD } from '../build-info';
+import { GITHUB_REPO_URL } from '../lib/constants';
 import { selectOldestCollectedAt, selectPublicRepoState } from '../lib/db';
 import { derivePublicKey } from '../lib/sign';
 import {
@@ -11,7 +14,7 @@ import {
 } from '../lib/cache';
 
 /**
- * `GET /api/:owner/:repo.json`, `GET /pubkey`, `GET /healthz`
+ * `GET /api/:owner/:repo.json`, `GET /pubkey`, `GET /version`, `GET /healthz`
  * (spec overview §Route Contracts; SPEC.md §5, §10 layout). Thin
  * controllers only — signing/derivation/query logic lives in `lib/`.
  */
@@ -87,6 +90,30 @@ api.get('/pubkey', async (c) => {
     };
     return jsonResponse(body, 200, CACHE_CONTROL.pubkey);
   });
+});
+
+/**
+ * Build provenance (spec overview §Step 3). Answers only "what commit is
+ * currently running" — a build-time constant, not a cryptographic proof
+ * (CLAUDE.md honesty constraint; no synonym for "verified"/"attested" ever
+ * belongs near this data). No D1 read, no `edgeCache`, no GitHub fetch —
+ * `BUILD` is a module-level constant, so there is nothing to look up.
+ */
+api.get('/version', () => {
+  // BUILD.commit is typed `string` (src/build-info.ts), not the literal
+  // `'dev'`, so this comparison narrows correctly without a local widening
+  // workaround.
+  const commit = BUILD.commit;
+  const body = {
+    version,
+    commit,
+    commit_short: commit === 'dev' ? 'dev' : commit.slice(0, 7),
+    run_id: BUILD.runId,
+    built_at: BUILD.builtAt,
+    source_url: `${GITHUB_REPO_URL}/commit/${commit}`,
+    run_url: `${GITHUB_REPO_URL}/actions/runs/${BUILD.runId}`,
+  };
+  return jsonResponse(body, 200, CACHE_CONTROL.version);
 });
 
 api.get('/healthz', async (c) => {

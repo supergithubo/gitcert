@@ -184,6 +184,30 @@ describe('GET /api/:owner/:repo.json, /pubkey, /healthz', () => {
     });
   });
 
+  describe('GET /version', () => {
+    it('returns the committed dev-sentinel build under test, with the exact seven snake_case keys and a 60s cache policy (happy path)', async () => {
+      const response = await SELF.fetch(`${ORIGIN}/version`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Content-Type')).toBe('application/json');
+      expect(response.headers.get('Cache-Control')).toBe('public, max-age=60');
+      expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(Object.keys(body).sort()).toEqual(
+        ['built_at', 'commit', 'commit_short', 'run_id', 'run_url', 'source_url', 'version'].sort(),
+      );
+      // The test runtime always sees the committed `'dev'` placeholder — CI
+      // is the only thing that ever stamps a real commit into this file.
+      expect(body.commit).toBe('dev');
+      expect(body.commit_short).toBe('dev');
+      expect(body.run_id).toBe('dev');
+      expect(body.built_at).toBe('dev');
+      expect(body.source_url).toBe('https://github.com/supergithubo/gitcert/commit/dev');
+      expect(body.run_url).toBe('https://github.com/supergithubo/gitcert/actions/runs/dev');
+      expect(typeof body.version).toBe('string');
+    });
+  });
+
   describe('GET /pubkey', () => {
     it('derives the Ed25519 public key at request time with the expected shape and cache policy', async () => {
       const response = await SELF.fetch(`${ORIGIN}/pubkey`);

@@ -12,6 +12,7 @@ import type { Child } from 'hono/jsx';
 import { formatCount, formatFullDate, formatSizeKb, formatTimestampUtc } from '../badges/format';
 import { renderBadge } from '../badges/render';
 import { sealSvg } from '../badges/seal';
+import { BUILD } from '../build-info';
 import type { PublicStats } from '../lib/types';
 import { GITHUB_REPO_URL, Layout } from './layout';
 
@@ -244,6 +245,25 @@ export function VerifyPage(props: VerifyProps) {
           {' '}·{' '}
           <a href={GITHUB_REPO_URL}>App permissions ↗</a>
         </div>
+        {/* Build provenance (spec overview §Step 6). This page — not the
+            footer — is the human-comparison surface, so the short SHA is
+            readable text here, mono like every other data token on the page.
+            One trailing ↗ marks the line as off-site; the SHA itself is a
+            value, not a nav affordance, so it carries no glyph. Omitted
+            entirely on a non-CI build (`commit === 'dev'`): a /verify page
+            naming "commit dev" would be worse than saying nothing. Wording is
+            deliberately "deployed from" / "by GitHub Actions" — the Worker
+            self-reports this, so it is a published claim to compare against
+            head-of-main, not any kind of cryptographic assurance. */}
+        {BUILD.commit === 'dev' ? null : (
+          <div class="mt-[10px]">
+            Deployed from commit{' '}
+            <a class="font-mono" href={`${GITHUB_REPO_URL}/commit/${BUILD.commit}`}>
+              {BUILD.commit.slice(0, 7)}
+            </a>{' '}
+            by <a href={`${GITHUB_REPO_URL}/actions/runs/${BUILD.runId}`}>GitHub Actions ↗</a>
+          </div>
+        )}
         <div class="mt-[18px] flex flex-wrap items-center justify-between gap-4 border-t border-hair pt-[18px]">
           <span>Attest your own private repos.</span>
           <a

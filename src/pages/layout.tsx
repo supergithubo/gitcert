@@ -22,8 +22,18 @@ import type { Child } from 'hono/jsx';
 // the version lives ONLY in root package.json, never hardcoded).
 import { version } from '../../package.json';
 import { sealSvg } from '../badges/seal';
+// Build-time provenance stamp (spec overview §Step 5). The committed `'dev'`
+// sentinel means "not built by CI", and the footer renders no commit link in
+// that case.
+import { BUILD } from '../build-info';
 
-export const GITHUB_REPO_URL = 'https://github.com/supergithubo/gitcert';
+// Moved to src/lib/constants.ts (spec overview §Step 2 — routes never import
+// from src/pages/, and this constant is now shared by src/routes/api.ts
+// too). Imported (not redeclared) and re-exported — the Footer below still
+// references it locally, and every existing page that already does
+// `import { GITHUB_REPO_URL } from './layout'` keeps compiling unchanged.
+import { GITHUB_REPO_URL } from '../lib/constants';
+export { GITHUB_REPO_URL };
 
 /**
  * First-paint theme restore. Runs inline in <head> BEFORE the stylesheet
@@ -239,12 +249,36 @@ function AccountMenu(props: { handle: string }) {
  * outer two. Links override the base accent link color with text-muted (accent
  * stays reserved for verified states); external links mirror the nav's
  * target/rel pattern. The version is ALWAYS build-time from root package.json.
+ *
+ * `BUILD` (src/build-info.ts) is build-time in exactly the same sense —
+ * stamped into the bundle by CI, so it is identical for every request and
+ * every visitor. That is what keeps the caching note above true now that the
+ * version cell can carry a commit link: nothing per-request or per-user
+ * enters the footer, so the edge-cached signed-out landing stays safe to
+ * cache. On a non-CI build `BUILD.commit` is `'dev'` and the cell renders
+ * plain unlinked text — a deploy that cannot name its commit makes no
+ * provenance claim. The 7-char SHA is deliberately NOT shown here; the
+ * footer keeps its length and weight, and /verify carries the readable hash.
  */
 function Footer() {
   return (
     <footer class="border-t border-hair bg-panel">
       <div class="mx-auto flex max-w-[1120px] flex-col items-center justify-center gap-2 px-4 py-[14px] font-mono text-[11px] text-muted sm:grid sm:min-h-[52px] sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-[14px] sm:px-7 sm:py-0 sm:text-[12px]">
-        <span class="whitespace-nowrap sm:justify-self-start">GitCert v{version}</span>
+        <span class="whitespace-nowrap sm:justify-self-start">
+          {BUILD.commit === 'dev' ? (
+            `GitCert v${version}`
+          ) : (
+            <a
+              href={`${GITHUB_REPO_URL}/commit/${BUILD.commit}`}
+              target="_blank"
+              rel="noopener"
+              title={`Deployed from commit ${BUILD.commit}`}
+              class="text-muted"
+            >
+              GitCert v{version}
+            </a>
+          )}
+        </span>
         <span class="whitespace-nowrap sm:justify-self-center">
           Built by{' '}
           <a href="https://wnston.dev" target="_blank" rel="noopener" class="text-muted">

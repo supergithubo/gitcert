@@ -23,6 +23,15 @@ export const CACHE_CONTROL = {
   docs: 'public, max-age=300',
   /** `/pubkey`. */
   pubkey: 'public, max-age=86400',
+  /**
+   * `GET /version` (spec overview §Step 3). Deliberate deviation from the
+   * layered TTLs above and from `/pubkey`'s 86400: `/version` exists to be
+   * compared against `git rev-parse HEAD` immediately after a deploy, so a
+   * long TTL would have auditors comparing a stale answer and concluding
+   * drift that isn't there. Same converge-fast rationale as `collecting`
+   * above (same value, separate name — do not "correct" this toward 86400).
+   */
+  version: 'public, max-age=60',
   /** `/healthz` only — bypasses `caches.default` entirely (operational probe, freshness is the point). */
   noStore: 'no-store',
 } as const;
