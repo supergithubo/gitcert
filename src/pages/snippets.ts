@@ -39,8 +39,9 @@ const ALT_TEXT = '{LABEL} — attested by GitCert';
 
 /**
  * Placeholder-form snippet templates. Placeholders: `{OWNER}` `{REPO}`
- * `{METRIC}` `{LABEL}` `{STYLE}` `{THEME}`. `react` is plain JSX at M3
- * (registry upgrade is M5). Line breaks/indentation are part of the
+ * `{METRIC}` `{LABEL}` `{STYLE}` `{THEME}`. `react` is plain JSX wrapping the
+ * same `<img>` as `html` — a badge is an image, and the edge-cached SVG needs
+ * no component. Line breaks/indentation are part of the
  * contract — pinned by test/pages/snippets.test.ts.
  */
 export const SNIPPET_TEMPLATES = {

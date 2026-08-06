@@ -12,8 +12,7 @@ OAuth login/session, the dashboard, and the owner mutations
 (`GET /`, below). A later cycle adds the public docs page (`GET /docs`)
 and threads the signed-in `login` into a shared account menu across
 `/`, `/docs`, and `/dashboard`; `POST /auth/logout` now redirects to
-`/?signed_out=1` instead of rendering its own page. The shadcn registry
-(`/r/*`) still lands in a later milestone per `SPEC.md` §12.
+`/?signed_out=1` instead of rendering its own page.
 
 Every route below is a `GET`. No handler calls GitHub in the request
 path — each is one D1 read (`selectPublicRepoState` / `selectOldestCollectedAt`)
