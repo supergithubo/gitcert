@@ -9,6 +9,8 @@ versions carry fixes and polish.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-06
+
 ### Added
 
 - `GET /version` — reports the running deployment's commit, build timestamp,
@@ -20,6 +22,10 @@ versions carry fixes and polish.
 
 - Deploys now run from GitHub Actions on push to `main` instead of a
   maintainer running `wrangler deploy` locally.
+
+### Removed
+
+- References to the unbuilt shadcn registry in the docs and snippets.
 
 ## [0.6.4] — 2026-07-27
 
@@ -156,7 +162,8 @@ Initial release.
 - Owner dashboard with GitHub OAuth sessions and tenant-scoped repo management.
 - Production Cloudflare and GitHub App configuration.
 
-[Unreleased]: https://github.com/supergithubo/gitcert/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/supergithubo/gitcert/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/supergithubo/gitcert/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/supergithubo/gitcert/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/supergithubo/gitcert/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/supergithubo/gitcert/compare/v0.6.1...v0.6.2
