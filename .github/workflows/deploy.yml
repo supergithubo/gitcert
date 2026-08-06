@@ -87,7 +87,15 @@ jobs:
       # thing between the stamp and production.
       - run: npm run typecheck
 
+      # `--tag`/`--message` write this run's identity into CLOUDFLARE's own
+      # version record, not just ours. Without them the record carries
+      # `Tag: -` / `Message: -`, so auditing "did every deploy come from CI?"
+      # means correlating upload timestamps against Actions run times — a
+      # clock argument, not an identity one. With them, `wrangler deployments
+      # list` names the commit outright, and an out-of-band deploy shows up
+      # as an untagged entry at a glance.
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --tag ${{ github.sha }} --message "GitHub Actions run ${{ github.run_id }}"
