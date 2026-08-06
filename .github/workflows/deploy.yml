@@ -44,12 +44,28 @@ jobs:
       # is load-bearing, not style — spec overview §Step 4).
       - run: npm run lint
 
+      # Regenerates the tracked `public/styles.css` asset so the uploaded
+      # stylesheet matches this build. Never committed back.
+      - run: npm run build:css
+
+      # `check` and `test` run against the COMMITTED `'dev'` placeholder,
+      # BEFORE the stamp below. This ordering is load-bearing, not style:
+      # the dev-sentinel tests (footer renders plain unlinked text, /verify
+      # omits its provenance line, GET /version returns `dev`) are the guard
+      # that a non-CI build never claims provenance. They assert against the
+      # real committed file on purpose — that is also what catches a real SHA
+      # accidentally committed into src/build-info.ts. Stamping first would
+      # make those four tests unrunnable in CI by construction.
+      - run: npm run check
+
+      - run: npm test
+
       # Overwrites the committed `'dev'` placeholder with this run's real
       # provenance, IN THE RUNNER ONLY — never committed back (`permissions:
-      # contents: read` above has no write scope to do so anyway). Runs
-      # BEFORE `check`/`test` below: the bytes that get typechecked and
-      # tested must be the exact bytes that get uploaded, or a stamp-time
-      # regression could ship untested.
+      # contents: read` above has no write scope to do so anyway). Last
+      # mutation before upload: the only delta from the tested tree is this
+      # one three-field constant, and a malformed stamp fails the deploy
+      # step's own bundle rather than shipping.
       # The type annotation is intentional and must match src/build-info.ts's
       # committed shape exactly: an explicit `{ readonly ...: string }`
       # object type, not `as const`. Without it, this real-SHA rewrite would
@@ -67,14 +83,9 @@ jobs:
           };
           EOF
 
-      # Regenerates the tracked `public/styles.css` asset so the uploaded
-      # stylesheet matches this build. Runs before `check`/deploy for the
-      # same reason as the stamp above — never committed back.
-      - run: npm run build:css
-
-      - run: npm run check
-
-      - run: npm test
+      # Typecheck the stamped file before upload — cheap, and it is the only
+      # thing between the stamp and production.
+      - run: npm run typecheck
 
       - uses: cloudflare/wrangler-action@v3
         with:
